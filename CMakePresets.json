@@ -1,0 +1,85 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "windows-ninja-debug",
+            "displayName": "Windows Ninja Debug (MSVC)",
+            "description": "Stage 0 foundation. Run from an x64 Native Tools prompt (or run scripts/dev-shell.ps1 first).",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "ENABLE_QT_UI": "OFF",
+                "ENABLE_FFMPEG": "OFF",
+                "BUILD_TESTING": "ON"
+            }
+        },
+        {
+            "name": "windows-ninja-release",
+            "displayName": "Windows Ninja Release (MSVC)",
+            "description": "Optimized build for the Stage 1 acceptance edit.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "ENABLE_QT_UI": "OFF",
+                "ENABLE_FFMPEG": "OFF",
+                "BUILD_TESTING": "ON"
+            }
+        },
+        {
+            "name": "windows-s1-debug",
+            "displayName": "Windows S1 Debug (MSVC + Qt 6.8 + FFmpeg n8.1)",
+            "description": "Stage 1: full editor shell. Requires C:/Qt/6.8.3 and third_party/ffmpeg pin. Run from an x64 Native Tools prompt (or scripts/dev-shell.ps1 first).",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/s1-debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_PREFIX_PATH": "C:/Qt/6.8.3/msvc2022_64",
+                "ENABLE_QT_UI": "ON",
+                "ENABLE_FFMPEG": "ON",
+                "BUILD_TESTING": "ON"
+            }
+        },
+        {
+            "name": "windows-s1-release",
+            "displayName": "Windows S1 Release (MSVC + Qt 6.8 + FFmpeg n8.1)",
+            "description": "Stage 1 shippable binaries: the ONLY preset packaging/deploy-editor-ui.ps1 accepts. Debug builds link the non-redistributable debug CRT and must never be packaged.",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/s1-release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_PREFIX_PATH": "C:/Qt/6.8.3/msvc2022_64",
+                "ENABLE_QT_UI": "ON",
+                "ENABLE_FFMPEG": "ON",
+                "BUILD_TESTING": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "debug", "configurePreset": "windows-ninja-debug" },
+        { "name": "release", "configurePreset": "windows-ninja-release" },
+        { "name": "s1", "configurePreset": "windows-s1-debug" },
+        { "name": "s1release", "configurePreset": "windows-s1-release" }
+    ],
+    "testPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "windows-ninja-debug",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "s1",
+            "configurePreset": "windows-s1-debug",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

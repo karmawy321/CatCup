@@ -1,0 +1,41 @@
+# Native builds / CMake
+build/
+out/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+
+# Qt / QML artefacts (Stage 1+)
+*.qmlc
+*.jsc
+.qmlcache/
+
+# FFmpeg / media caches (never commit derived media)
+*.cache/
+proxies/
+thumbnails/
+waveforms/
+
+# Project / editor droppings
+*.autosave.json
+*.journal
+*.tmp
+
+# Pinned third-party binaries (see third_party/ffmpeg/PINNED.md — docs tracked, blobs not)
+third_party/ffmpeg/*.zip
+third_party/ffmpeg/checksums.sha256
+third_party/ffmpeg/ffmpeg-*/
+
+# OS / IDE / Logs
+*.log
+.DS_Store
+Thumbs.db
+.vs/
+.vscode/
+*.user
+*.suo
+
