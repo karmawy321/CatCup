@@ -18,7 +18,10 @@ $vsWhere = "${Env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.e
 if (-not (Test-Path -LiteralPath $vsWhere)) {
     throw "vswhere.exe not found at $vsWhere"
 }
-$installPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools -property installationPath
+$installPath = & $vsWhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $installPath) {
+    $installPath = & $vsWhere -latest -products * -property installationPath
+}
 if (-not $installPath) { throw "No Visual Studio with VC.Tools found." }
 Write-Host "VS installation: $installPath"
 
@@ -30,7 +33,10 @@ foreach ($tool in @('cl', 'cmake', 'ninja')) {
     if (-not $found) { throw "$tool not found on PATH after dev-shell import." }
     Write-Host "$tool -> $($found.Source)"
 }
-cl 2>&1 | Select-Object -First 2
+$prevEA = $ErrorActionPreference
+$ErrorActionPreference = 'SilentlyContinue'
+cmd /c "cl 2>&1" | Select-Object -First 2
+$ErrorActionPreference = $prevEA
 cmake --version | Select-Object -First 1
 ninja --version
 Write-Host "Toolchain OK."
