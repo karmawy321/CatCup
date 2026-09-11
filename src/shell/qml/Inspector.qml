@@ -2,8 +2,13 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Right column: 2026 Studio Property Inspector with collapsible obsidian
-// cards, precision numeric sliders, and retiming presets.
+// CapCut Desktop 1:1 Inspector / Property Panel:
+// - Top Tab Bar: Details | Video | Audio | Speed | Animation | Adjustment
+// - Details view matching CapCut screenshot: Name, Path, Color space (Rec. 709 SDR), Size, FPS, and [Modify] button
+// - Video view: Transform (Scale, Pos X, Pos Y, Rot), Opacity, Fade In/Out, Keyframes (+ Keyframe at Playhead)
+// - Audio view: Loudness Normalization (ITU-R BS.1770 -14 LUFS) & Voice Cleanup (Denoise)
+// - Speed view: Retiming slider with 0.5x, 1.0x, 2.0x, 4.0x presets
+// - Adjustment view: Color Grading (Temp, Tint, Saturation, Brightness, Contrast)
 
 Rectangle {
     id: root
@@ -16,619 +21,651 @@ Rectangle {
     property var transInfo: selection.selectedTransitionId !== ""
         ? timeline.transitionInfo(selection.selectedTransitionId) : null
 
-    ScrollView {
+    property int activeTab: 0 // 0: Details, 1: Video, 2: Audio, 3: Speed, 4: Adjustment
+
+    ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        contentWidth: availableWidth
-        clip: true
+        spacing: 0
 
-        ColumnLayout {
-            width: root.availableWidth - 20
-            spacing: 10
+        // ---- CapCut Top Tab Bar ----
+        Rectangle {
+            Layout.fillWidth: true
+            height: 38
+            color: Theme.bgSurface
+            border.color: Theme.borderSubtle
+            border.width: 1
 
-            // Inspector Header
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 6
+            ScrollView {
+                anchors.fill: parent
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AlwaysOff
 
-                Text {
-                    text: "INSPECTOR"
-                    font.family: Theme.fontMono
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Theme.textSecondary
-                    Layout.fillWidth: true
-                }
-            }
-
-            // Empty State
-            Rectangle {
-                visible: (root.info === null || root.info.clipId === undefined) &&
-                         (root.transInfo === null || root.transInfo.id === undefined)
-                Layout.fillWidth: true
-                height: 120
-                radius: Theme.radiusMedium
-                color: Theme.bgCard
-                border.color: Theme.borderMedium
-                border.width: 1
-
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    spacing: 6
-
-                    Text {
-                        text: "🖱"
-                        font.pixelSize: 20
-                        Layout.alignment: Qt.AlignHCenter
-                    }
-
-                    Text {
-                        text: "No clip or transition selected"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 11
-                        font.bold: true
-                        color: Theme.textSecondary
-                        Layout.alignment: Qt.AlignHCenter
-                    }
-
-                    Text {
-                        text: "Click an item on the timeline to edit properties"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 10
-                        color: Theme.textTertiary
-                        Layout.alignment: Qt.AlignHCenter
-                    }
-                }
-            }
-
-            // ==================== CLIP INSPECTOR ====================
-            ColumnLayout {
-                visible: root.info !== null && root.info.clipId !== undefined
-                spacing: 10
-                Layout.fillWidth: true
-
-                // Clip Title Banner
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 40
-                    radius: Theme.radiusSmall
-                    color: Theme.bgCard
-                    border.color: Theme.borderMedium
-                    border.width: 1
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 8
-                        spacing: 6
-
-                        Text {
-                            text: (root.info ? root.info.name : "")
-                            font.family: Theme.fontBody
-                            font.pixelSize: 12
-                            font.bold: true
-                            color: Theme.textPrimary
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-
-                        Rectangle {
-                            implicitWidth: kindBadge.implicitWidth + 8
-                            implicitHeight: 20
-                            radius: 4
-                            color: root.info && root.info.kind === "video" ? "#163836" : (root.info && root.info.kind === "audio" ? "#183820" : "#2E1C44")
-
-                            Text {
-                                id: kindBadge
-                                anchors.centerIn: parent
-                                text: root.info ? root.info.kind.toUpperCase() : ""
-                                font.family: Theme.fontMono
-                                font.pixelSize: 9
-                                font.bold: true
-                                color: root.info && root.info.kind === "video" ? Theme.cyan : (root.info && root.info.kind === "audio" ? Theme.accent : Theme.purple)
-                            }
-                        }
-                    }
-                }
-
-                // 1. Timing & Placement Card
-                StudioCard {
-                    title: "Timing & Position"
-                    iconText: "⏱"
-                    collapsible: true
-                    Layout.fillWidth: true
-
-                    StudioSlider {
-                        label: "Start Time"
-                        from: 0
-                        to: 3600
-                        stepSize: 0.1
-                        value: root.info ? root.info.startSec : 0
-                        unit: "s"
-                        Layout.fillWidth: true
-                        onApply: (v) => session.moveClipTo(selection.selectedClipId, v)
-                    }
-
-                    StudioSlider {
-                        label: "Duration"
-                        from: 0.1
-                        to: 3600
-                        stepSize: 0.1
-                        value: root.info ? root.info.durationSec : 0
-                        unit: "s"
-                        Layout.fillWidth: true
-                        onApply: (v) => {
-                            var i = root.info
-                            session.trimClip(selection.selectedClipId, i.sourceInSec, i.sourceInSec + v, i.startSec)
-                        }
-                    }
-
-                    StudioSlider {
-                        label: "Opacity"
-                        from: 0.0
-                        to: 1.0
-                        stepSize: 0.01
-                        value: root.info && root.info.opacity !== undefined ? root.info.opacity : 1.0
-                        decimals: 2
-                        Layout.fillWidth: true
-                        onApply: (v) => session.setClipOpacity(selection.selectedClipId, Math.max(0.0, Math.min(1.0, v)))
-                    }
-                }
-
-                // 2. Speed & Retiming Card
-                StudioCard {
-                    title: "Speed & Retiming"
-                    iconText: "⚡"
-                    collapsible: true
-                    Layout.fillWidth: true
-
-                    StudioSlider {
-                        id: speedSlider
-                        label: "Playback Speed"
-                        from: 0.1
-                        to: 10.0
-                        stepSize: 0.1
-                        value: root.info && root.info.speed !== undefined ? root.info.speed : 1.0
-                        unit: "×"
-                        Layout.fillWidth: true
-                        onApply: (v) => session.setClipSpeed(selection.selectedClipId, Math.max(0.1, Math.min(10.0, v)))
-                    }
-
-                    // Quick Retiming Preset Pills
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 4
-
-                        Repeater {
-                            model: [0.5, 1.0, 2.0, 4.0]
-                            delegate: StudioButton {
-                                text: modelData.toFixed(1) + "×"
-                                compact: true
-                                variant: root.info && Math.abs(root.info.speed - modelData) < 0.05 ? "primary" : "secondary"
-                                Layout.fillWidth: true
-                                onClicked: session.setClipSpeed(selection.selectedClipId, modelData)
-                            }
-                        }
-                    }
-                }
-
-                // 3. Color Grading Card
-                StudioCard {
-                    title: "Color Grading"
-                    iconText: "🎨"
-                    collapsible: true
-                    Layout.fillWidth: true
-
-                    StudioSlider {
-                        label: "Brightness"
-                        from: -1.0
-                        to: 1.0
-                        stepSize: 0.02
-                        value: root.info && root.info.brightness !== undefined ? root.info.brightness : 0.0
-                        Layout.fillWidth: true
-                        onApply: (v) => applyColor(v, root.info.contrast, root.info.saturation, root.info.temperature, root.info.tint)
-                    }
-
-                    StudioSlider {
-                        label: "Contrast"
-                        from: 0.0
-                        to: 2.0
-                        stepSize: 0.02
-                        value: root.info && root.info.contrast !== undefined ? root.info.contrast : 1.0
-                        Layout.fillWidth: true
-                        onApply: (v) => applyColor(root.info.brightness, v, root.info.saturation, root.info.temperature, root.info.tint)
-                    }
-
-                    StudioSlider {
-                        label: "Saturation"
-                        from: 0.0
-                        to: 2.0
-                        stepSize: 0.02
-                        value: root.info && root.info.saturation !== undefined ? root.info.saturation : 1.0
-                        Layout.fillWidth: true
-                        onApply: (v) => applyColor(root.info.brightness, root.info.contrast, v, root.info.temperature, root.info.tint)
-                    }
-
-                    StudioSlider {
-                        label: "Temperature"
-                        from: -1.0
-                        to: 1.0
-                        stepSize: 0.02
-                        value: root.info && root.info.temperature !== undefined ? root.info.temperature : 0.0
-                        Layout.fillWidth: true
-                        onApply: (v) => applyColor(root.info.brightness, root.info.contrast, root.info.saturation, v, root.info.tint)
-                    }
-
-                    StudioSlider {
-                        label: "Tint"
-                        from: -1.0
-                        to: 1.0
-                        stepSize: 0.02
-                        value: root.info && root.info.tint !== undefined ? root.info.tint : 0.0
-                        Layout.fillWidth: true
-                        onApply: (v) => applyColor(root.info.brightness, root.info.contrast, root.info.saturation, root.info.temperature, v)
-                    }
-
-                    StudioButton {
-                        text: "Reset Color"
-                        iconText: "↺"
-                        variant: "ghost"
-                        Layout.fillWidth: true
-                        onClicked: applyColor(0.0, 1.0, 1.0, 0.0, 0.0)
-                    }
-                }
-
-                // 4. Transform & Geometry Card
-                StudioCard {
-                    title: "Transform & Geometry"
-                    iconText: "📐"
-                    collapsible: true
-                    Layout.fillWidth: true
-
-                    StudioSlider {
-                        label: "Scale"
-                        from: 0.1
-                        to: 8.0
-                        stepSize: 0.05
-                        value: root.info ? root.info.scale : 1.0
-                        unit: "×"
-                        Layout.fillWidth: true
-                        onApply: (v) => applyTransform({scale: v})
-                    }
-
-                    StudioSlider {
-                        label: "Position X"
-                        from: -1920
-                        to: 1920
-                        stepSize: 1
-                        value: root.info ? root.info.x : 0
-                        decimals: 0
-                        unit: "px"
-                        Layout.fillWidth: true
-                        onApply: (v) => applyTransform({x: v})
-                    }
-
-                    StudioSlider {
-                        label: "Position Y"
-                        from: -1080
-                        to: 1080
-                        stepSize: 1
-                        value: root.info ? root.info.y : 0
-                        decimals: 0
-                        unit: "px"
-                        Layout.fillWidth: true
-                        onApply: (v) => applyTransform({y: v})
-                    }
-
-                    StudioSlider {
-                        label: "Rotation"
-                        from: -180
-                        to: 180
-                        stepSize: 1
-                        value: root.info ? root.info.rotation : 0
-                        decimals: 0
-                        unit: "°"
-                        Layout.fillWidth: true
-                        onApply: (v) => applyTransform({rotation: v})
-                    }
-                }
-
-                // 5. Applied Effects Stack Card
-                StudioCard {
-                    title: "Applied Effects"
-                    iconText: "✨"
-                    collapsible: true
-                    Layout.fillWidth: true
-                    visible: root.info && root.info.effects && root.info.effects.length > 0
+                Row {
+                    spacing: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
 
                     Repeater {
-                        model: root.info ? root.info.effects : []
+                        model: [
+                            { name: "Details", id: 0 },
+                            { name: "Video", id: 1 },
+                            { name: "Audio", id: 2 },
+                            { name: "Speed", id: 3 },
+                            { name: "Adjustment", id: 4 }
+                        ]
+
                         delegate: Rectangle {
-                            id: outerDelegate
-                            property int effectIndex: index
-                            property string effectType: modelData.type
-                            Layout.fillWidth: true
-                            implicitHeight: effCol.implicitHeight + 12
-                            color: Theme.bgElevated
-                            radius: Theme.radiusSmall
-                            border.color: Theme.borderMedium
-                            border.width: 1
+                            implicitWidth: tabText.implicitWidth + 16
+                            implicitHeight: 38
+                            color: "transparent"
 
-                            ColumnLayout {
-                                id: effCol
+                            Text {
+                                id: tabText
+                                anchors.centerIn: parent
+                                text: modelData.name
+                                font.family: Theme.fontBody
+                                font.pixelSize: 11
+                                font.weight: root.activeTab === modelData.id ? Font.DemiBold : Font.Normal
+                                color: root.activeTab === modelData.id ? Theme.accent : Theme.textSecondary
+                            }
+
+                            // Active Cyan Underline
+                            Rectangle {
+                                visible: root.activeTab === modelData.id
+                                anchors.bottom: parent.bottom
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                height: 2
+                                color: Theme.accent
+                            }
+
+                            MouseArea {
                                 anchors.fill: parent
-                                anchors.margins: 8
-                                spacing: 6
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-
-                                    Text {
-                                        text: outerDelegate.effectType.toUpperCase()
-                                        font.family: Theme.fontMono
-                                        font.pixelSize: 11
-                                        font.bold: true
-                                        color: Theme.cyan
-                                        Layout.fillWidth: true
-                                    }
-
-                                    StudioButton {
-                                        text: "✕"
-                                        compact: true
-                                        variant: "danger"
-                                        onClicked: session.removeClipEffect(selection.selectedClipId, outerDelegate.effectIndex)
-                                    }
-                                }
-
-                                // Numerical Parameters
-                                Repeater {
-                                    model: {
-                                        if (!modelData.params || modelData.type === "color_adjust") return []
-                                        var keys = Object.keys(modelData.params)
-                                        var arr = []
-                                        for (var i = 0; i < keys.length; ++i) {
-                                            var k = keys[i]
-                                            arr.push({ name: k, val: modelData.params[k] })
-                                        }
-                                        return arr
-                                    }
-                                    delegate: StudioSlider {
-                                        label: modelData.name
-                                        from: (modelData.name === "intensity" || modelData.name === "smoothness" || modelData.name === "similarity") ? 0.0 : (modelData.name === "radius" && outerDelegate.effectType === "blur" ? 1.0 : 0.0)
-                                        to: (modelData.name === "radius" && outerDelegate.effectType === "blur") ? 50.0 : (modelData.name === "amount" ? 5.0 : 2.0)
-                                        stepSize: 0.02
-                                        value: modelData.val
-                                        Layout.fillWidth: true
-                                        onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, outerDelegate.effectIndex, modelData.name, v)
-                                    }
-                                }
-
-                                // String Parameters (e.g. key_color)
-                                Repeater {
-                                    model: {
-                                        if (!modelData.strParams) return []
-                                        var keys = Object.keys(modelData.strParams)
-                                        var arr = []
-                                        for (var i = 0; i < keys.length; ++i) {
-                                            var k = keys[i]
-                                            arr.push({ name: k, val: modelData.strParams[k] })
-                                        }
-                                        return arr
-                                    }
-                                    delegate: RowLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 6
-
-                                        Text {
-                                            text: modelData.name
-                                            font.family: Theme.fontBody
-                                            font.pixelSize: 10
-                                            color: Theme.textSecondary
-                                            Layout.preferredWidth: 60
-                                        }
-
-                                        Rectangle {
-                                            Layout.fillWidth: true
-                                            height: 24
-                                            radius: 4
-                                            color: Theme.bgApp
-                                            border.color: Theme.borderMedium
-                                            border.width: 1
-
-                                            TextInput {
-                                                anchors.fill: parent
-                                                anchors.margins: 4
-                                                font.family: Theme.fontMono
-                                                font.pixelSize: 10
-                                                color: Theme.textPrimary
-                                                text: modelData.val
-                                                onEditingFinished: session.updateClipEffectStrParam(selection.selectedClipId, outerDelegate.effectIndex, modelData.name, text)
-                                            }
-                                        }
-                                    }
-                                }
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.activeTab = modelData.id
                             }
                         }
                     }
                 }
+            }
+        }
 
-                // 6. Typography & Text Settings Card
-                StudioCard {
-                    title: "Typography & Text"
-                    iconText: "🔤"
-                    collapsible: true
+        // ---- Tab Body Content ----
+        ScrollView {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            anchors.margins: 10
+            contentWidth: availableWidth
+            clip: true
+
+            ColumnLayout {
+                width: root.availableWidth - 20
+                spacing: 12
+
+                // ==================== 0. DETAILS VIEW (Exact CapCut Replication) ====================
+                ColumnLayout {
+                    visible: root.activeTab === 0
                     Layout.fillWidth: true
-                    visible: root.info && (root.info.kind === "text" || root.info.text !== "")
+                    spacing: 10
 
-                    Text {
-                        text: "Caption Text"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 10
-                        color: Theme.textSecondary
+                    // Clip / Sequence Details Card
+                    Rectangle {
+                        Layout.fillWidth: true
+                        radius: 6
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+                        implicitHeight: detailsCol.implicitHeight + 24
+
+                        ColumnLayout {
+                            id: detailsCol
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 10
+
+                            // Name Row
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Name"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: root.info ? root.info.name : (session ? session.projectName : "Timeline 01")
+                                    font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary
+                                    elide: Text.ElideRight; Layout.fillWidth: true
+                                }
+                            }
+
+                            // Path Row
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Path"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: root.info ? "Source Media (" + root.info.kind + ")" : "Project File"
+                                    font.family: Theme.fontMono; font.pixelSize: 10; color: Theme.textSecondary
+                                    elide: Text.ElideRight; Layout.fillWidth: true
+                                }
+                            }
+
+                            // Color space Row (Matches CapCut screenshot: "Rec. 709 SDR")
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Color space"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: "Rec. 709 SDR"
+                                    font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textPrimary
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            // Size Row
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Size"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: "1920×1080 (" + (session ? session.getSequenceAspectPreset() : "16:9") + ")"
+                                    font.family: Theme.fontMono; font.pixelSize: 11; color: Theme.textPrimary
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            // Frame rate Row
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Frame rate"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: "30.00 fps"
+                                    font.family: Theme.fontMono; font.pixelSize: 11; color: Theme.textPrimary
+                                    Layout.fillWidth: true
+                                }
+                            }
+
+                            // Duration Row
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Text { text: "Duration"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
+                                Text {
+                                    text: (root.info ? root.info.durationSec.toFixed(2) : timeline.durationSec.toFixed(2)) + "s"
+                                    font.family: Theme.fontMono; font.pixelSize: 11; color: Theme.accent
+                                    Layout.fillWidth: true
+                                }
+                            }
+                        }
                     }
 
+                    // Prominent [Modify] Button (As seen at bottom of CapCut Details panel)
                     Rectangle {
                         Layout.fillWidth: true
                         height: 32
-                        radius: Theme.radiusSmall
-                        color: Theme.bgElevated
-                        border.color: titleText.activeFocus ? Theme.borderFocus : Theme.borderMedium
+                        radius: 16
+                        color: modMa.containsMouse ? Theme.bgHover : Theme.bgElevated
+                        border.color: Theme.borderMedium
                         border.width: 1
 
-                        TextInput {
-                            id: titleText
-                            anchors.fill: parent
-                            anchors.margins: 6
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Modify"
                             font.family: Theme.fontBody
-                            font.pixelSize: 12
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
                             color: Theme.textPrimary
-                            selectByMouse: true
-                            text: root.info ? root.info.text : ""
                         }
-                    }
 
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 6
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 28
-                            radius: 4
-                            color: Theme.bgElevated
-                            border.color: titleFont.activeFocus ? Theme.borderFocus : Theme.borderMedium
-                            border.width: 1
-
-                            TextInput {
-                                id: titleFont
-                                anchors.fill: parent
-                                anchors.margins: 4
-                                font.family: Theme.fontBody
-                                font.pixelSize: 11
-                                color: Theme.textPrimary
-                                text: root.info && root.info.fontFamily !== "" ? root.info.fontFamily : "Arial"
+                        MouseArea {
+                            id: modMa
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                if (root.info) root.activeTab = 1
                             }
                         }
-
-                        SpinBox {
-                            id: titleSize
-                            from: 8
-                            to: 400
-                            value: root.info ? Math.round(root.info.fontSizePt) : 72
-                        }
-                    }
-
-                    StudioButton {
-                        text: "Apply Text Style"
-                        iconText: "✓"
-                        variant: "primary"
-                        Layout.fillWidth: true
-                        onClicked: session.setClipText(selection.selectedClipId, titleText.text, titleFont.text, titleSize.value)
                     }
                 }
-            }
 
-            // ==================== TRANSITION INSPECTOR ====================
-            ColumnLayout {
-                visible: root.transInfo !== null && root.transInfo.id !== undefined
-                spacing: 10
-                Layout.fillWidth: true
+                // ==================== 1. VIDEO TAB (Transform, Opacity, Keyframes) ====================
+                ColumnLayout {
+                    visible: root.activeTab === 1
+                    Layout.fillWidth: true
+                    spacing: 10
 
-                StudioCard {
-                    title: "Transition: " + (root.transInfo ? root.transInfo.type : "")
-                    iconText: "⚡"
+                    // Empty Selection Notice
+                    Rectangle {
+                        visible: root.info === null || root.info.clipId === undefined
+                        Layout.fillWidth: true
+                        height: 80
+                        radius: 6
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Select a video or text clip on the timeline"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            color: Theme.textSecondary
+                        }
+                    }
+
+                    // Basic Transform Card
+                    StudioCard {
+                        visible: root.info !== null && root.info.clipId !== undefined
+                        title: "Basic Transform"
+                        Layout.fillWidth: true
+
+                        StudioSlider {
+                            label: "Scale"
+                            from: 0.1
+                            to: 8.0
+                            stepSize: 0.05
+                            value: root.info ? root.info.scale : 1.0
+                            unit: "×"
+                            Layout.fillWidth: true
+                            onApply: (v) => applyTransform({scale: v})
+                        }
+
+                        StudioSlider {
+                            label: "Position X"
+                            from: -1920
+                            to: 1920
+                            stepSize: 1
+                            value: root.info ? root.info.x : 0
+                            decimals: 0
+                            unit: "px"
+                            Layout.fillWidth: true
+                            onApply: (v) => applyTransform({x: v})
+                        }
+
+                        StudioSlider {
+                            label: "Position Y"
+                            from: -1080
+                            to: 1080
+                            stepSize: 1
+                            value: root.info ? root.info.y : 0
+                            decimals: 0
+                            unit: "px"
+                            Layout.fillWidth: true
+                            onApply: (v) => applyTransform({y: v})
+                        }
+
+                        StudioSlider {
+                            label: "Rotation"
+                            from: -180
+                            to: 180
+                            stepSize: 1
+                            value: root.info ? root.info.rotation : 0
+                            decimals: 0
+                            unit: "°"
+                            Layout.fillWidth: true
+                            onApply: (v) => applyTransform({rotation: v})
+                        }
+                    }
+
+                    // Blend & Fades Card
+                    StudioCard {
+                        visible: root.info !== null && root.info.clipId !== undefined
+                        title: "Blend & Fades"
+                        Layout.fillWidth: true
+
+                        StudioSlider {
+                            label: "Opacity"
+                            from: 0.0
+                            to: 1.0
+                            stepSize: 0.01
+                            value: root.info && root.info.opacity !== undefined ? root.info.opacity : 1.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => session.setClipOpacity(selection.selectedClipId, Math.max(0.0, Math.min(1.0, v)))
+                        }
+
+                        StudioSlider {
+                            label: "Fade In"
+                            from: 0.0
+                            to: 5.0
+                            stepSize: 0.1
+                            value: root.info && root.info.fadeInSec !== undefined ? root.info.fadeInSec : 0.0
+                            unit: "s"
+                            Layout.fillWidth: true
+                            onApply: (v) => {
+                                var out = root.info && root.info.fadeOutSec !== undefined ? root.info.fadeOutSec : 0.0
+                                session.setClipFade(selection.selectedClipId, v, out)
+                            }
+                        }
+
+                        StudioSlider {
+                            label: "Fade Out"
+                            from: 0.0
+                            to: 5.0
+                            stepSize: 0.1
+                            value: root.info && root.info.fadeOutSec !== undefined ? root.info.fadeOutSec : 0.0
+                            unit: "s"
+                            Layout.fillWidth: true
+                            onApply: (v) => {
+                                var fi = root.info && root.info.fadeInSec !== undefined ? root.info.fadeInSec : 0.0
+                                session.setClipFade(selection.selectedClipId, fi, v)
+                            }
+                        }
+                    }
+
+                    // Keyframe Animation Card (Stage 5 Feature!)
+                    StudioCard {
+                        visible: root.info !== null && root.info.clipId !== undefined
+                        title: "Keyframe Animation"
+                        iconText: "◆"
+                        Layout.fillWidth: true
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Text {
+                                text: "Active Keyframes:"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                Layout.fillWidth: true
+                            }
+
+                            Rectangle {
+                                implicitWidth: 28
+                                implicitHeight: 20
+                                radius: 4
+                                color: Theme.bgElevated
+                                border.color: Theme.accent
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: root.info ? (root.info.keyframeCount || 0) : 0
+                                    font.family: Theme.fontMono
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: Theme.accent
+                                }
+                            }
+                        }
+
+                        StudioButton {
+                            text: "+ Keyframe at Playhead"
+                            iconText: "◆"
+                            variant: "primary"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (root.info && selection.selectedClipId !== "") {
+                                    session.setClipKeyframe(
+                                        selection.selectedClipId,
+                                        selection.playheadSec,
+                                        root.info.scale,
+                                        root.info.x,
+                                        root.info.y,
+                                        root.info.rotation,
+                                        root.info.opacity,
+                                        "easeInOut"
+                                    )
+                                }
+                            }
+                        }
+
+                        StudioButton {
+                            text: "− Remove Keyframe"
+                            iconText: "×"
+                            variant: "ghost"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.removeClipKeyframe(selection.selectedClipId, selection.playheadSec)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==================== 2. AUDIO TAB (LUFS Normalization & Voice Cleanup) ====================
+                ColumnLayout {
+                    visible: root.activeTab === 2
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    StudioCard {
+                        title: "Loudness & Dynamics"
+                        iconText: "▲"
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "ITU-R BS.1770 / EBU R128 Loudness Normalization"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textTertiary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        StudioButton {
+                            text: "Normalize Audio (-14 LUFS)"
+                            iconText: "▲"
+                            variant: "primary"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.normalizeClipAudio(selection.selectedClipId, -14.0)
+                                }
+                            }
+                        }
+                    }
+
+                    StudioCard {
+                        title: "Voice Cleanup & Denoise"
+                        iconText: "✦"
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "High-pass rumble filter (80 Hz) and speech noise gate"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textTertiary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        StudioButton {
+                            text: "Apply Voice Cleanup"
+                            iconText: "✓"
+                            variant: "secondary"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.denoiseClipAudio(selection.selectedClipId, 80.0)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==================== 3. SPEED TAB (Retiming & Presets) ====================
+                ColumnLayout {
+                    visible: root.activeTab === 3
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    StudioCard {
+                        title: "Playback Speed"
+                        iconText: "◷"
+                        Layout.fillWidth: true
+
+                        StudioSlider {
+                            label: "Speed Factor"
+                            from: 0.1
+                            to: 10.0
+                            stepSize: 0.1
+                            value: root.info && root.info.speed !== undefined ? root.info.speed : 1.0
+                            unit: "×"
+                            Layout.fillWidth: true
+                            onApply: (v) => session.setClipSpeed(selection.selectedClipId, Math.max(0.1, Math.min(10.0, v)))
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Repeater {
+                                model: [0.5, 1.0, 2.0, 4.0]
+                                delegate: StudioButton {
+                                    text: modelData.toFixed(1) + "×"
+                                    compact: true
+                                    variant: root.info && Math.abs(root.info.speed - modelData) < 0.05 ? "primary" : "secondary"
+                                    Layout.fillWidth: true
+                                    onClicked: session.setClipSpeed(selection.selectedClipId, modelData)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ==================== 4. ADJUSTMENT / COLOR TAB ====================
+                ColumnLayout {
+                    visible: root.activeTab === 4
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    StudioCard {
+                        title: "Color Grading"
+                        iconText: "◈"
+                        Layout.fillWidth: true
+
+
+                        StudioSlider {
+                            label: "Temperature"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.temperature !== undefined ? root.info.temperature : 0.0
+                            Layout.fillWidth: true
+                            onApply: (v) => applyColor(root.info.brightness, root.info.contrast, root.info.saturation, v, root.info.tint)
+                        }
+
+                        StudioSlider {
+                            label: "Tint"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.tint !== undefined ? root.info.tint : 0.0
+                            Layout.fillWidth: true
+                            onApply: (v) => applyColor(root.info.brightness, root.info.contrast, root.info.saturation, root.info.temperature, v)
+                        }
+
+                        StudioSlider {
+                            label: "Saturation"
+                            from: 0.0
+                            to: 2.0
+                            stepSize: 0.02
+                            value: root.info && root.info.saturation !== undefined ? root.info.saturation : 1.0
+                            Layout.fillWidth: true
+                            onApply: (v) => applyColor(root.info.brightness, root.info.contrast, v, root.info.temperature, root.info.tint)
+                        }
+
+                        StudioSlider {
+                            label: "Brightness"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.brightness !== undefined ? root.info.brightness : 0.0
+                            Layout.fillWidth: true
+                            onApply: (v) => applyColor(v, root.info.contrast, root.info.saturation, root.info.temperature, root.info.tint)
+                        }
+
+                        StudioSlider {
+                            label: "Contrast"
+                            from: 0.0
+                            to: 2.0
+                            stepSize: 0.02
+                            value: root.info && root.info.contrast !== undefined ? root.info.contrast : 1.0
+                            Layout.fillWidth: true
+                            onApply: (v) => applyColor(root.info.brightness, v, root.info.saturation, root.info.temperature, root.info.tint)
+                        }
+
+                        StudioButton {
+                            text: "Reset Color"
+                            iconText: "↺"
+                            variant: "ghost"
+                            Layout.fillWidth: true
+                            onClicked: applyColor(0.0, 1.0, 1.0, 0.0, 0.0)
+                        }
+                    }
+                }
+
+                // ==================== TRANSITION INSPECTOR ====================
+                ColumnLayout {
+                    visible: root.transInfo !== null && root.transInfo.id !== undefined
+                    spacing: 10
                     Layout.fillWidth: true
 
-                    Text {
-                        text: "Type"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 10
-                        color: Theme.textSecondary
-                    }
-
-                    ComboBox {
-                        id: typeCombo
+                    StudioCard {
+                        title: "Transition: " + (root.transInfo ? root.transInfo.type : "")
+                        iconText: "⚡"
                         Layout.fillWidth: true
-                        model: ["crossfade", "dip_black", "dip_white", "wipe_left", "wipe_right", "wipe_up", "wipe_down"]
-                        currentIndex: {
-                            if (!root.transInfo) return 0
-                            var idx = model.indexOf(root.transInfo.type)
-                            return idx >= 0 ? idx : 0
+
+                        Text {
+                            text: "Type"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textSecondary
                         }
-                        onActivated: {
-                            if (root.transInfo && selection.selectedTransitionId !== "") {
-                                session.updateTransition(
-                                    selection.selectedTransitionId,
-                                    root.transInfo.durationSec,
-                                    alignCombo.currentIndex,
-                                    currentText,
-                                    "linear"
-                                )
+
+                        ComboBox {
+                            id: typeCombo
+                            Layout.fillWidth: true
+                            model: ["crossfade", "dip_black", "dip_white", "wipe_left", "wipe_right", "wipe_up", "wipe_down"]
+                            currentIndex: {
+                                if (!root.transInfo) return 0
+                                var idx = model.indexOf(root.transInfo.type)
+                                return idx >= 0 ? idx : 0
+                            }
+                            onActivated: {
+                                if (root.transInfo && selection.selectedTransitionId !== "") {
+                                    session.updateTransition(
+                                        selection.selectedTransitionId,
+                                        root.transInfo.durationSec,
+                                        alignCombo.currentIndex,
+                                        currentText,
+                                        "linear"
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    StudioSlider {
-                        id: transDurSlider
-                        label: "Duration"
-                        from: 0.1
-                        to: 10.0
-                        stepSize: 0.1
-                        value: root.transInfo ? root.transInfo.durationSec : 1.0
-                        unit: "s"
-                        Layout.fillWidth: true
-                        onApply: (v) => {
-                            if (root.transInfo && selection.selectedTransitionId !== "") {
-                                session.updateTransition(
-                                    selection.selectedTransitionId,
-                                    v,
-                                    alignCombo.currentIndex,
-                                    typeCombo.currentText,
-                                    "linear"
-                                )
+                        StudioSlider {
+                            label: "Duration"
+                            from: 0.1
+                            to: 10.0
+                            stepSize: 0.1
+                            value: root.transInfo ? root.transInfo.durationSec : 1.0
+                            unit: "s"
+                            Layout.fillWidth: true
+                            onApply: (v) => {
+                                if (root.transInfo && selection.selectedTransitionId !== "") {
+                                    session.updateTransition(
+                                        selection.selectedTransitionId,
+                                        v,
+                                        alignCombo.currentIndex,
+                                        typeCombo.currentText,
+                                        "linear"
+                                    )
+                                }
                             }
                         }
-                    }
 
-                    Text {
-                        text: "Alignment"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 10
-                        color: Theme.textSecondary
-                    }
-
-                    ComboBox {
-                        id: alignCombo
-                        Layout.fillWidth: true
-                        model: ["Center on Cut", "Start on Cut", "End on Cut"]
-                        currentIndex: {
-                            if (!root.transInfo) return 0
-                            var al = root.transInfo.alignment
-                            if (al === "start") return 1
-                            if (al === "end") return 2
-                            return 0
-                        }
-                        onActivated: {
-                            if (root.transInfo && selection.selectedTransitionId !== "") {
-                                session.updateTransition(
-                                    selection.selectedTransitionId,
-                                    root.transInfo.durationSec,
-                                    currentIndex,
-                                    typeCombo.currentText,
-                                    "linear"
-                                )
-                            }
-                        }
-                    }
-
-                    StudioButton {
-                        text: "Delete Transition"
-                        iconText: "🗑"
-                        variant: "danger"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            if (selection.selectedTransitionId !== "") {
-                                session.removeTransition(selection.selectedTransitionId)
-                                selection.clearSelection()
+                        StudioButton {
+                            text: "Delete Transition"
+                            iconText: "×"
+                            variant: "danger"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (selection.selectedTransitionId !== "") {
+                                    session.removeTransition(selection.selectedTransitionId)
+                                    selection.clearSelection()
+                                }
                             }
                         }
                     }

@@ -707,4 +707,289 @@ std::unique_ptr<ICommand> makeSetOpacityCommand(const core::Id& clipId, double o
     return std::make_unique<SetOpacityCommand>(clipId, opacity);
 }
 
+class SetKeyframeCommand final : public ICommand {
+public:
+    SetKeyframeCommand(core::Id clipId, core::Keyframe kf)
+        : clipId_(std::move(clipId)), kf_(std::move(kf)) {}
+
+    std::string label() const override { return "Set keyframe"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (clip == nullptr) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        prevKeyframes_ = clip->keyframes;
+
+        // Insert or update keyframe at kf_.seqTime
+        bool updated = false;
+        for (auto& k : clip->keyframes) {
+            if (k.seqTime == kf_.seqTime) {
+                k = kf_;
+                updated = true;
+                break;
+            }
+        }
+        if (!updated) {
+            clip->keyframes.push_back(kf_);
+            std::sort(clip->keyframes.begin(), clip->keyframes.end(),
+                      [](const auto& a, const auto& b) { return a.seqTime < b.seqTime; });
+        }
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            if (core::Clip* clip = seq->findClip(clipId_)) {
+                clip->keyframes = prevKeyframes_;
+            }
+        }
+    }
+
+private:
+    core::Id clipId_;
+    core::Keyframe kf_;
+    std::vector<core::Keyframe> prevKeyframes_;
+};
+
+class RemoveKeyframeCommand final : public ICommand {
+public:
+    RemoveKeyframeCommand(core::Id clipId, core::Rational seqTime)
+        : clipId_(std::move(clipId)), seqTime_(seqTime) {}
+
+    std::string label() const override { return "Remove keyframe"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (clip == nullptr) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        prevKeyframes_ = clip->keyframes;
+
+        for (auto it = clip->keyframes.begin(); it != clip->keyframes.end(); ++it) {
+            if (it->seqTime == seqTime_) {
+                clip->keyframes.erase(it);
+                return true;
+            }
+        }
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            if (core::Clip* clip = seq->findClip(clipId_)) {
+                clip->keyframes = prevKeyframes_;
+            }
+        }
+    }
+
+private:
+    core::Id clipId_;
+    core::Rational seqTime_;
+    std::vector<core::Keyframe> prevKeyframes_;
+};
+
+class SetFadeCommand final : public ICommand {
+public:
+    SetFadeCommand(core::Id clipId, double fadeInSec, double fadeOutSec)
+        : clipId_(std::move(clipId)), fadeIn_(fadeInSec), fadeOut_(fadeOutSec) {}
+
+    std::string label() const override { return "Set clip fade"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (clip == nullptr) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        prevFadeIn_ = clip->fadeInSec;
+        prevFadeOut_ = clip->fadeOutSec;
+        clip->fadeInSec = std::max(0.0, fadeIn_);
+        clip->fadeOutSec = std::max(0.0, fadeOut_);
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            if (core::Clip* clip = seq->findClip(clipId_)) {
+                clip->fadeInSec = prevFadeIn_;
+                clip->fadeOutSec = prevFadeOut_;
+            }
+        }
+    }
+
+private:
+    core::Id clipId_;
+    double fadeIn_ = 0.0;
+    double fadeOut_ = 0.0;
+    double prevFadeIn_ = 0.0;
+    double prevFadeOut_ = 0.0;
+};
+
+class SetSequenceFormatCommand final : public ICommand {
+public:
+    SetSequenceFormatCommand(std::int64_t width, std::int64_t height)
+        : width_(width), height_(height) {}
+
+    std::string label() const override { return "Change canvas resolution"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        if (width_ <= 0 || height_ <= 0) {
+            error = "canvas dimensions must be positive";
+            return false;
+        }
+        prevWidth_ = seq->width;
+        prevHeight_ = seq->height;
+        seq->width = width_;
+        seq->height = height_;
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            seq->width = prevWidth_;
+            seq->height = prevHeight_;
+        }
+    }
+
+private:
+    std::int64_t width_ = 1280;
+    std::int64_t height_ = 720;
+    std::int64_t prevWidth_ = 1280;
+    std::int64_t prevHeight_ = 720;
+};
+
+std::unique_ptr<ICommand> makeSetKeyframeCommand(const core::Id& clipId, core::Keyframe kf) {
+    return std::make_unique<SetKeyframeCommand>(clipId, std::move(kf));
+}
+
+std::unique_ptr<ICommand> makeRemoveKeyframeCommand(const core::Id& clipId, core::Rational seqTime) {
+    return std::make_unique<RemoveKeyframeCommand>(clipId, seqTime);
+}
+
+std::unique_ptr<ICommand> makeSetFadeCommand(const core::Id& clipId, double fadeInSec, double fadeOutSec) {
+    return std::make_unique<SetFadeCommand>(clipId, fadeInSec, fadeOutSec);
+}
+
+std::unique_ptr<ICommand> makeSetSequenceFormatCommand(std::int64_t width, std::int64_t height) {
+    return std::make_unique<SetSequenceFormatCommand>(width, height);
+}
+
+class MoveClipToTrackCommand final : public ICommand {
+public:
+    MoveClipToTrackCommand(core::Id clipId, core::Id newTrackId, core::Rational newStart)
+        : clipId_(std::move(clipId)), newTrackId_(std::move(newTrackId)), newStart_(newStart) {}
+
+    std::string label() const override { return "Move clip to track"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (!seq) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (!clip) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        core::Track* destTrack = seq->findTrack(newTrackId_);
+        if (!destTrack) {
+            error = "destination track not found: " + newTrackId_;
+            return false;
+        }
+        if (newStart_.isNegative()) {
+            error = "clip start cannot be negative";
+            return false;
+        }
+
+        // Find old track
+        core::Track* srcTrack = nullptr;
+        for (auto& t : seq->tracks) {
+            auto it = std::find(t.clipIds.begin(), t.clipIds.end(), clipId_);
+            if (it != t.clipIds.end()) {
+                srcTrack = &t;
+                oldIndex_ = static_cast<std::size_t>(std::distance(t.clipIds.begin(), it));
+                break;
+            }
+        }
+        if (!srcTrack) {
+            error = "clip not found on any track";
+            return false;
+        }
+
+        if (!haveOld_) {
+            oldTrackId_ = srcTrack->id;
+            oldStart_ = clip->seqStart;
+            haveOld_ = true;
+        }
+
+        if (srcTrack->id != newTrackId_) {
+            srcTrack->clipIds.erase(srcTrack->clipIds.begin() + oldIndex_);
+            destTrack->clipIds.push_back(clipId_);
+        }
+        clip->seqStart = newStart_;
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        core::Sequence* seq = project.activeSequence();
+        if (!seq) return;
+        core::Clip* clip = seq->findClip(clipId_);
+        if (!clip) return;
+
+        if (oldTrackId_ != newTrackId_) {
+            core::Track* destTrack = seq->findTrack(newTrackId_);
+            core::Track* srcTrack = seq->findTrack(oldTrackId_);
+            if (destTrack) {
+                auto it = std::find(destTrack->clipIds.begin(), destTrack->clipIds.end(), clipId_);
+                if (it != destTrack->clipIds.end()) {
+                    destTrack->clipIds.erase(it);
+                }
+            }
+            if (srcTrack) {
+                const auto at = (std::min)(oldIndex_, srcTrack->clipIds.size());
+                srcTrack->clipIds.insert(srcTrack->clipIds.begin() + at, clipId_);
+            }
+        }
+        clip->seqStart = oldStart_;
+    }
+
+private:
+    core::Id clipId_;
+    core::Id newTrackId_;
+    core::Rational newStart_;
+    core::Id oldTrackId_;
+    core::Rational oldStart_{0};
+    std::size_t oldIndex_ = 0;
+    bool haveOld_ = false;
+};
+
+std::unique_ptr<ICommand> makeMoveClipToTrackCommand(const core::Id& clipId, const core::Id& newTrackId, core::Rational newStart) {
+    return std::make_unique<MoveClipToTrackCommand>(clipId, newTrackId, newStart);
+}
+
 } // namespace editor::commands
+

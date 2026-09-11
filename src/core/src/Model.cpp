@@ -271,4 +271,87 @@ Result<void> Project::validate() const {
     return Result<void>::ok();
 }
 
+static double interpolateFactor(double p, const std::string& easing) {
+    if (p <= 0.0) return 0.0;
+    if (p >= 1.0) return 1.0;
+    if (easing == "ease_in") {
+        return p * p;
+    } else if (easing == "ease_out") {
+        return p * (2.0 - p);
+    } else if (easing == "ease_in_out") {
+        return p * p * (3.0 - 2.0 * p);
+    }
+    return p; // linear
+}
+
+Transform Clip::evaluateTransformAt(const Rational& t) const {
+    if (keyframes.empty()) {
+        return transform;
+    }
+    if (t <= keyframes.front().seqTime) {
+        return keyframes.front().transform;
+    }
+    if (t >= keyframes.back().seqTime) {
+        return keyframes.back().transform;
+    }
+    for (std::size_t i = 0; i + 1 < keyframes.size(); ++i) {
+        const auto& k0 = keyframes[i];
+        const auto& k1 = keyframes[i + 1];
+        if (t >= k0.seqTime && t <= k1.seqTime) {
+            const Rational span = k1.seqTime - k0.seqTime;
+            if (span.num() <= 0) return k0.transform;
+            const double rawFactor = static_cast<double>(t - k0.seqTime) / static_cast<double>(span);
+            const double factor = interpolateFactor(rawFactor, k0.easing);
+            Transform tr;
+            tr.scale = k0.transform.scale + (k1.transform.scale - k0.transform.scale) * factor;
+            tr.x = k0.transform.x + (k1.transform.x - k0.transform.x) * factor;
+            tr.y = k0.transform.y + (k1.transform.y - k0.transform.y) * factor;
+            tr.rotationDeg = k0.transform.rotationDeg + (k1.transform.rotationDeg - k0.transform.rotationDeg) * factor;
+            return tr;
+        }
+    }
+    return transform;
+}
+
+double Clip::evaluateOpacityAt(const Rational& t) const {
+    double baseOpacity = opacity;
+    if (!keyframes.empty()) {
+        if (t <= keyframes.front().seqTime) {
+            baseOpacity = keyframes.front().opacity;
+        } else if (t >= keyframes.back().seqTime) {
+            baseOpacity = keyframes.back().opacity;
+        } else {
+            for (std::size_t i = 0; i + 1 < keyframes.size(); ++i) {
+                const auto& k0 = keyframes[i];
+                const auto& k1 = keyframes[i + 1];
+                if (t >= k0.seqTime && t <= k1.seqTime) {
+                    const Rational span = k1.seqTime - k0.seqTime;
+                    if (span.num() > 0) {
+                        const double rawFactor = static_cast<double>(t - k0.seqTime) / static_cast<double>(span);
+                        const double factor = interpolateFactor(rawFactor, k0.easing);
+                        baseOpacity = k0.opacity + (k1.opacity - k0.opacity) * factor;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    double fadeMult = 1.0;
+    if (fadeInSec > 0.0) {
+        const double offsetSec = static_cast<double>(t - seqStart);
+        if (offsetSec < fadeInSec && fadeInSec > 0.0) {
+            fadeMult = std::max(0.0, offsetSec / fadeInSec);
+        }
+    }
+    if (fadeOutSec > 0.0) {
+        const double remainingSec = static_cast<double>(seqEnd() - t);
+        if (remainingSec < fadeOutSec && fadeOutSec > 0.0) {
+            fadeMult = std::min(fadeMult, std::max(0.0, remainingSec / fadeOutSec));
+        }
+    }
+
+    return std::max(0.0, std::min(1.0, baseOpacity * fadeMult));
+}
+
 } // namespace editor::core

@@ -2,9 +2,13 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-// Bottom region: 2026 Studio Multi-Track Timeline with Precision Ruler,
-// Laser Playhead, Simulated Audio Waveforms, Filmstrip Clip Headers, and
-// Track Sidebars.
+// CapCut Desktop 1:1 Multi-Track Timeline:
+// - Precision Ruler with clean timecode markings (00:00, 00:03, 00:06)
+// - White Laser Playhead with floating time pill
+// - Multi-Track headers with [Cover] badge, Track Lock, Eye, and Mute
+// - Smooth adaptive block moving (non-destructive x/y offset, snap feedback, cross-track dragging)
+// - Left/Right edge-trimming grips with visual hover cues
+// - CapCut slate teal clips (#1C4049) with cyan borders (#00C7D4) and audio waveforms
 
 Rectangle {
     id: root
@@ -14,34 +18,54 @@ Rectangle {
     border.color: Theme.borderSubtle
     border.width: 1
 
-    readonly property real headerW: 130
-    readonly property real rulerH: 30
+    readonly property real headerW: 136
+    readonly property real rulerH: 32
     readonly property real px: selection.pxPerSec
-    readonly property real laneW: Math.max(lanesFlick.width, timeline.durationSec * root.px + 200)
+    readonly property real laneW: Math.max(lanesFlick.width, timeline.durationSec * root.px + 400)
+
+    // Active dragging state across tracks
+    property string activeDragClipId: ""
+    property string hoveredTrackId: ""
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 6
-        spacing: 4
+        spacing: 0
 
-        // ---- Modern Timeline Toolbar ----
+        // ---- CapCut Timeline Action Toolbar ----
         Rectangle {
             Layout.fillWidth: true
-            height: 36
-            radius: Theme.radiusSmall
+            height: 38
             color: Theme.bgSurface
             border.color: Theme.borderSubtle
             border.width: 1
 
             RowLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
                 spacing: 6
 
+                // Select Arrow Tool
+                Rectangle {
+                    implicitWidth: 28
+                    implicitHeight: 28
+                    radius: 4
+                    color: Theme.bgActive
+                    border.color: Theme.accent
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "↖"
+                        font.pixelSize: 14
+                        color: Theme.accent
+                    }
+                }
+
+                // Split Tool
                 StudioButton {
                     text: "Split"
-                    iconText: "✂"
+                    iconText: "]["
                     compact: true
                     variant: "secondary"
                     onClicked: {
@@ -50,11 +74,12 @@ Rectangle {
                     }
                 }
 
+                // Delete Tool
                 StudioButton {
                     text: "Delete"
-                    iconText: "🗑"
+                    iconText: "×"
                     compact: true
-                    variant: "danger"
+                    variant: "ghost"
                     onClicked: {
                         if (selection.selectedClipId !== "") {
                             session.deleteClip(selection.selectedClipId)
@@ -66,11 +91,30 @@ Rectangle {
                     }
                 }
 
+                // Undo
+                StudioButton {
+                    iconText: "↶"
+                    compact: true
+                    variant: "ghost"
+                    enabled: session.canUndo
+                    onClicked: session.undo()
+                }
+
+                // Redo
+                StudioButton {
+                    iconText: "↷"
+                    compact: true
+                    variant: "ghost"
+                    enabled: session.canRedo
+                    onClicked: session.redo()
+                }
+
                 Rectangle { width: 1; height: 16; color: Theme.borderMedium }
 
+                // Auto-Magnet (CapCut Signature Toggle)
                 StudioButton {
-                    text: "Snap"
-                    iconText: "🧲"
+                    text: "Magnet"
+                    iconText: "∩"
                     compact: true
                     checkable: true
                     checked: session.snappingEnabled
@@ -78,9 +122,10 @@ Rectangle {
                     onClicked: session.snappingEnabled = !session.snappingEnabled
                 }
 
+                // Auto-Ripple (CapCut Ripple Toggle)
                 StudioButton {
                     text: "Ripple"
-                    iconText: "🌊"
+                    iconText: "⇥⇤"
                     compact: true
                     checkable: true
                     checked: session.rippleMode
@@ -90,16 +135,41 @@ Rectangle {
 
                 Item { Layout.fillWidth: true }
 
-                // Zoom Controls
+                // Voiceover Record Button
+                Rectangle {
+                    implicitWidth: 80
+                    implicitHeight: 26
+                    radius: 13
+                    color: recMa.containsMouse ? Theme.bgHover : Theme.bgElevated
+                    border.color: Theme.borderMedium
+                    border.width: 1
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text { text: "●"; font.pixelSize: 10; color: "#EF4444" }
+                        Text {
+                            text: "Record"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            color: Theme.textSecondary
+                        }
+                    }
+
+
+                    MouseArea {
+                        id: recMa
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
+
+                Rectangle { width: 1; height: 16; color: Theme.borderMedium }
+
+                // CapCut Zoom Controls
                 RowLayout {
                     spacing: 4
-
-                    Text {
-                        text: "Zoom:"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 10
-                        color: Theme.textTertiary
-                    }
 
                     StudioButton {
                         text: "−"
@@ -108,21 +178,14 @@ Rectangle {
                         onClicked: selection.zoomOut()
                     }
 
-                    Rectangle {
-                        implicitWidth: 44
-                        implicitHeight: 22
-                        radius: 4
-                        color: Theme.bgElevated
-                        border.color: Theme.borderSubtle
-                        border.width: 1
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: Math.round(root.px) + "px"
-                            font.family: Theme.fontMono
-                            font.pixelSize: 10
-                            color: Theme.textSecondary
-                        }
+                    // Continuous Zoom Slider
+                    Slider {
+                        id: zoomSlider
+                        from: 8
+                        to: 600
+                        value: root.px
+                        implicitWidth: 90
+                        onMoved: selection.setPxPerSec(value)
                     }
 
                     StudioButton {
@@ -146,32 +209,58 @@ Rectangle {
             }
         }
 
-        // ---- Ruler + Track Headers + Lanes ----
+        // ---- Multi-Track Sidebar + Ruler + Scrollable Lanes ----
         RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 0
 
-            // Left: Track Headers Sidebar
+            // Left: CapCut Track Headers Column
             Column {
                 width: root.headerW
                 spacing: 0
 
-                // Empty corner spacer opposite the ruler
+                // Top Header Spacer with [Cover] Badge
                 Rectangle {
                     width: root.headerW
                     height: root.rulerH
-                    color: Theme.bgSurface
+                    color: Theme.bgSidebar
                     border.color: Theme.borderSubtle
                     border.width: 1
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "TRACKS"
-                        font.family: Theme.fontMono
-                        font.pixelSize: 9
-                        font.bold: true
-                        color: Theme.textTertiary
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: 8
+                        anchors.rightMargin: 8
+
+                        // [Cover] Badge as in CapCut
+                        Rectangle {
+                            implicitWidth: 54
+                            implicitHeight: 20
+                            radius: 4
+                            color: Theme.bgElevated
+                            border.color: Theme.borderMedium
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Cover"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                font.weight: Font.DemiBold
+                                color: Theme.textSecondary
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Text {
+                            text: "TRACKS"
+                            font.family: Theme.fontMono
+                            font.pixelSize: 8
+                            font.bold: true
+                            color: Theme.textTertiary
+                        }
                     }
                 }
 
@@ -180,9 +269,9 @@ Rectangle {
                     model: timeline.tracks
                     delegate: Rectangle {
                         width: root.headerW
-                        height: modelData.kind === "video" ? 54 : (modelData.kind === "audio" ? 44 : 38)
-                        color: Theme.bgSurface
-                        border.color: Theme.borderSubtle
+                        height: modelData.kind === "video" ? 56 : (modelData.kind === "audio" ? 46 : 40)
+                        color: root.hoveredTrackId === modelData.trackId ? "#202E38" : Theme.bgSidebar
+                        border.color: root.hoveredTrackId === modelData.trackId ? Theme.accent : Theme.borderSubtle
                         border.width: 1
 
                         RowLayout {
@@ -191,13 +280,13 @@ Rectangle {
                             anchors.rightMargin: 8
                             spacing: 6
 
-                            // Kind Badge
+                            // Track ID Badge (V1, V2, A1)
                             Rectangle {
                                 implicitWidth: 26
                                 implicitHeight: 22
                                 radius: 4
-                                color: modelData.kind === "video" ? "#163836" : (modelData.kind === "audio" ? "#183820" : "#2E1C44")
-                                border.color: modelData.kind === "video" ? Theme.cyan : (modelData.kind === "audio" ? Theme.accent : Theme.purple)
+                                color: modelData.kind === "video" ? "#1C363C" : (modelData.kind === "audio" ? "#1B2E38" : "#2E1C44")
+                                border.color: modelData.kind === "video" ? Theme.accent : (modelData.kind === "audio" ? "#38BDF8" : Theme.purple)
                                 border.width: 1
 
                                 Text {
@@ -206,31 +295,33 @@ Rectangle {
                                     font.family: Theme.fontMono
                                     font.pixelSize: 10
                                     font.bold: true
-                                    color: modelData.kind === "video" ? Theme.cyan : (modelData.kind === "audio" ? Theme.accent : Theme.purple)
+                                    color: modelData.kind === "video" ? Theme.accent : (modelData.kind === "audio" ? "#38BDF8" : Theme.purple)
                                 }
                             }
 
                             Text {
-                                text: modelData.kind.toUpperCase()
+                                text: modelData.kind === "video" ? "Main Video" : (modelData.kind === "audio" ? "Audio Track" : "Text Overlay")
                                 font.family: Theme.fontBody
                                 font.pixelSize: 10
                                 color: Theme.textSecondary
+                                elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
 
-                            // Track Controls (Mute / Lock status icons)
-                            Text {
-                                text: "🔒"
-                                font.pixelSize: 10
-                                color: Theme.textTertiary
-                                opacity: 0.6
+                            // Track Controls: Lock, Eye, Mute
+                            Row {
+                                spacing: 6
+                                Text { text: "⚿"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.6 }
+                                Text { text: "◉"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.7 }
+                                Text { text: "♫"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.6 }
                             }
+
                         }
                     }
                 }
             }
 
-            // Right: Scrollable Lanes & Playhead
+            // Right: Scrollable Ruler, Lanes & Playhead
             Flickable {
                 id: lanesFlick
                 Layout.fillWidth: true
@@ -267,16 +358,16 @@ Rectangle {
                     id: rulerCol
                     width: root.laneW
 
-                    // ---- Modern Precision Ruler ----
+                    // ---- CapCut Precision Ruler ----
                     Rectangle {
                         width: parent.width
                         height: root.rulerH
-                        color: "#0D0F15"
+                        color: "#16161A"
                         border.color: Theme.borderSubtle
                         border.width: 1
 
                         Repeater {
-                            model: Math.ceil(timeline.durationSec) + 4
+                            model: Math.ceil(timeline.durationSec) + 12
                             delegate: Item {
                                 x: index * root.px
                                 width: root.px
@@ -286,44 +377,45 @@ Rectangle {
                                 Rectangle {
                                     x: root.px * 0.25
                                     width: 1
-                                    height: 4
-                                    color: "#252B3A"
+                                    height: 3
+                                    color: "#2B2B32"
                                     anchors.bottom: parent.bottom
                                 }
                                 Rectangle {
                                     x: root.px * 0.5
                                     width: 1
-                                    height: 6
-                                    color: "#353D52"
+                                    height: 5
+                                    color: "#383842"
                                     anchors.bottom: parent.bottom
                                 }
                                 Rectangle {
                                     x: root.px * 0.75
                                     width: 1
-                                    height: 4
-                                    color: "#252B3A"
+                                    height: 3
+                                    color: "#2B2B32"
                                     anchors.bottom: parent.bottom
                                 }
 
                                 // Major second line
                                 Rectangle {
                                     width: 1
-                                    height: (index % 5 === 0) ? 14 : 9
-                                    color: (index % 5 === 0) ? Theme.cyan : "#4A5570"
+                                    height: (index % 3 === 0) ? 12 : 7
+                                    color: (index % 3 === 0) ? "#555562" : "#383842"
                                     anchors.bottom: parent.bottom
                                 }
 
+                                // CapCut Time format: 00:00, 00:03, 00:06
                                 Text {
-                                    visible: index % 5 === 0
-                                    text: index + "s"
+                                    visible: index % 3 === 0
+                                    text: formatRulerTime(index)
                                     font.family: Theme.fontMono
                                     font.pixelSize: 9
-                                    font.bold: true
-                                    color: Theme.cyan
+                                    font.weight: Font.DemiBold
+                                    color: "#8E8E9A"
                                     anchors.bottom: parent.bottom
-                                    anchors.bottomMargin: 15
+                                    anchors.bottomMargin: 14
                                     anchors.left: parent.left
-                                    anchors.leftMargin: 4
+                                    anchors.leftMargin: 3
                                 }
                             }
                         }
@@ -340,22 +432,24 @@ Rectangle {
 
                     // ---- Track Lanes ----
                     Repeater {
+                        id: trackLanesRepeater
                         model: timeline.tracks
                         delegate: Rectangle {
+                            id: laneRect
                             property var track: modelData
                             width: rulerCol.width
-                            height: track.kind === "video" ? 54 : (track.kind === "audio" ? 44 : 38)
-                            color: index % 2 === 0 ? "#11141C" : "#0E1117"
-                            border.color: "#1A1F2C"
-                            border.width: 1
+                            height: track.kind === "video" ? 56 : (track.kind === "audio" ? 46 : 40)
+                            color: root.hoveredTrackId === track.trackId ? "#1A2830" : (index % 2 === 0 ? "#121214" : "#141417")
+                            border.color: root.hoveredTrackId === track.trackId ? Theme.accent : "#222226"
+                            border.width: root.hoveredTrackId === track.trackId ? 2 : 1
 
-                            // Horizontal subtle center alignment guideline
+                            // Horizontal subtle center guideline
                             Rectangle {
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.verticalCenter: parent.verticalCenter
                                 height: 1
-                                color: "#161B26"
+                                color: "#1E1E22"
                             }
 
                             // Clips on this track
@@ -364,6 +458,7 @@ Rectangle {
                                 delegate: ClipBlock {
                                     visible: model.trackId === track.trackId
                                     clipId: model.clipId
+                                    currentTrackId: track.trackId
                                     kind: model.trackKind
                                     label: model.displayText
                                     startSec: model.startSec
@@ -392,46 +487,45 @@ Rectangle {
                     }
                 }
 
-                // ---- Laser Playhead Needle & Line ----
-                // Playhead needle header (diamond head)
+                // ---- CapCut Pure White Laser Playhead ----
+                // Playhead top white pill badge with current time
                 Rectangle {
-                    x: root.playheadSec * root.px - 7
+                    x: root.playheadSec * root.px - width / 2
                     y: 2
-                    width: 14
-                    height: 14
-                    radius: 2
-                    rotation: 45
-                    color: Theme.cyan
-                    border.color: "#FFFFFF"
-                    border.width: 1
+                    width: 52
+                    height: 16
+                    radius: 3
+                    color: "#FFFFFF"
                     z: 50
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: formatPlayheadPill(root.playheadSec)
+                        font.family: Theme.fontMono
+                        font.pixelSize: 9
+                        font.bold: true
+                        color: "#000000"
+                    }
                 }
 
-                // Playhead glowing laser beam extending across all lanes
+                // White Playhead needle line
                 Rectangle {
                     x: root.playheadSec * root.px - 1
                     y: 0
                     width: 2
                     height: rulerCol.height
-                    color: Theme.cyan
+                    color: "#FFFFFF"
                     z: 49
-
-                    // Subtle cyan glow halo
-                    Rectangle {
-                        anchors.centerIn: parent
-                        width: 6
-                        height: parent.height
-                        color: Theme.cyanGlow
-                    }
                 }
             }
         }
     }
 
-    // ---- 2026 Sleek Clip Block Component ----
+    // ---- CapCut Adaptive Clip Block Component ----
     component ClipBlock : Rectangle {
         id: clipRoot
         property string clipId: ""
+        property string currentTrackId: ""
         property string kind: "video"
         property string label: ""
         property double startSec: 0
@@ -440,35 +534,37 @@ Rectangle {
         property bool selected: false
         property double laneHeight: 40
 
-        x: startSec * pxPerSec
-        y: 2
+        // Adaptive dragging offset properties (Preserves QML declarative bindings!)
+        property real dragOffsetX: 0
+        property real dragOffsetY: 0
+        property bool isDragging: false
+
+        x: (startSec * pxPerSec) + dragOffsetX
+        y: 2 + dragOffsetY
         width: Math.max(8, durationSec * pxPerSec - 2)
         height: laneHeight - 4
-        radius: Theme.radiusSmall
+        radius: 4
         clip: true
+        z: isDragging ? 100 : (selected ? 20 : 5)
 
-        // Base gradient per kind
-        gradient: Gradient {
-            GradientStop {
-                position: 0.0
-                color: kind === "audio" ? Theme.trackAudioGrad : (kind === "text" ? Theme.trackTextGrad : Theme.trackVideoGrad)
-            }
-            GradientStop {
-                position: 1.0
-                color: kind === "audio" ? Theme.trackAudio : (kind === "text" ? Theme.trackText : Theme.trackVideo)
-            }
+        // CapCut Palette: Slate Cyan-Teal for Video (#1C4049), Slate Blue for Audio (#1B3248)
+        color: {
+            if (kind === "audio") return "#1B3248"
+            if (kind === "text") return "#2D2140"
+            return "#1C4049"
         }
 
-        border.color: selected ? Theme.accent : Theme.borderHighlight
+        // CapCut Border: Bright Cyan-Teal #00C7D4 when selected
+        border.color: selected ? Theme.accent : (kind === "video" ? "#2A5A66" : (kind === "audio" ? "#2B4B63" : "#4A3366"))
         border.width: selected ? 2 : 1
 
-        // Top Filmstrip Header for Video Clips
+        // Top Filmstrip Notches for Video Clips
         Rectangle {
             visible: clipRoot.kind === "video"
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 10
+            height: 9
             color: "#33000000"
 
             Row {
@@ -477,9 +573,9 @@ Rectangle {
                 anchors.leftMargin: 4
                 spacing: 8
                 Repeater {
-                    model: Math.min(20, Math.floor(clipRoot.width / 12))
+                    model: Math.min(30, Math.floor(clipRoot.width / 14))
                     delegate: Rectangle {
-                        width: 5
+                        width: 6
                         height: 4
                         radius: 1
                         color: "#66FFFFFF"
@@ -488,7 +584,7 @@ Rectangle {
             }
         }
 
-        // Simulated Audio Waveforms for Audio Clips
+        // Audio Waveform Peaks for Audio Clips
         Row {
             visible: clipRoot.kind === "audio"
             anchors.left: parent.left
@@ -497,14 +593,13 @@ Rectangle {
             anchors.leftMargin: 6
             anchors.rightMargin: 6
             spacing: 3
-            opacity: 0.55
+            opacity: 0.65
 
             Repeater {
-                model: Math.min(60, Math.floor(clipRoot.width / 5))
+                model: Math.min(80, Math.floor(clipRoot.width / 5))
                 delegate: Rectangle {
                     width: 2
-                    // Deterministic pseudorandom heights simulating an audio waveform
-                    height: Math.max(4, Math.sin(index * 1.3) * 12 + 14)
+                    height: Math.max(4, Math.sin(index * 1.2) * 12 + 14)
                     radius: 1
                     color: Theme.accent
                     anchors.verticalCenter: parent.verticalCenter
@@ -512,7 +607,7 @@ Rectangle {
             }
         }
 
-        // Clip Content Label & Kind Icon
+        // Clip Content Label & Duration
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
@@ -520,14 +615,9 @@ Rectangle {
             spacing: 4
 
             Text {
-                text: clipRoot.kind === "video" ? "🎬" : (clipRoot.kind === "audio" ? "🎵" : "💬")
-                font.pixelSize: 10
-            }
-
-            Text {
                 text: clipRoot.label
                 font.family: Theme.fontBody
-                font.pixelSize: 10
+                font.pixelSize: 11
                 font.weight: Font.DemiBold
                 color: "#FFFFFF"
                 elide: Text.ElideRight
@@ -537,94 +627,196 @@ Rectangle {
             Text {
                 text: clipRoot.durationSec.toFixed(1) + "s"
                 font.family: Theme.fontMono
-                font.pixelSize: 8
-                color: "#CCFFFFFF"
+                font.pixelSize: 9
+                color: "#B3FFFFFF"
             }
+        }
+
+        // Selected Corner Resizing Handles
+        Rectangle {
+            visible: clipRoot.selected
+            width: 4
+            height: 10
+            radius: 2
+            color: "#FFFFFF"
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        Rectangle {
+            visible: clipRoot.selected
+            width: 4
+            height: 10
+            radius: 2
+            color: "#FFFFFF"
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
         }
 
         // Left Trim Handle Grip
         Rectangle {
+            id: leftGrip
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 6
-            color: drag.mouseX < 8 ? Theme.accent : "transparent"
+            width: 8
+            color: dragMa.mouseX < 8 ? Theme.accent : "transparent"
             opacity: 0.8
         }
 
         // Right Trim Handle Grip
         Rectangle {
+            id: rightGrip
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 6
-            color: drag.mouseX > parent.width - 8 ? Theme.accent : "transparent"
+            width: 8
+            color: dragMa.mouseX > parent.width - 8 ? Theme.accent : "transparent"
             opacity: 0.8
         }
 
-        // Interaction MouseArea for Drag-Move and Edge-Trimming
+        // Floating Snap/Move Badge while dragging
+        Rectangle {
+            visible: clipRoot.isDragging
+            anchors.bottom: parent.top
+            anchors.bottomMargin: 4
+            anchors.horizontalCenter: parent.horizontalCenter
+            implicitWidth: dragTimeText.implicitWidth + 12
+            implicitHeight: 20
+            radius: 4
+            color: "#E600C7D4"
+
+            Text {
+                id: dragTimeText
+                anchors.centerIn: parent
+                text: formatPlayheadPill(Math.max(0, (clipRoot.startSec * pxPerSec + clipRoot.dragOffsetX) / pxPerSec))
+                font.family: Theme.fontMono
+                font.pixelSize: 9
+                font.bold: true
+                color: "#000000"
+            }
+        }
+
+        // Interaction MouseArea for Smooth Drag-Move and Edge-Trimming
         MouseArea {
-            id: drag
+            id: dragMa
             anchors.fill: parent
             hoverEnabled: true
-            drag.target: parent
-            drag.axis: Drag.XAxis
-            drag.minimumX: 0
             cursorShape: (mouseX < 8 || mouseX > width - 8) ? Qt.SizeHorCursor : Qt.ArrowCursor
 
-            property string pressedSize: ""
-            property real pressX: 0
+            property string dragMode: "" // "move", "left_trim", "right_trim"
+            property real pressStartX: 0
             property real pressMouseX: 0
-            property real curMouseX: 0
+            property real pressMouseY: 0
             property var pressInfo: null
 
             onPressed: (m) => {
                 selection.select(clipRoot.clipId)
-                pressX = clipRoot.x
+                root.activeDragClipId = clipRoot.clipId
+                pressStartX = clipRoot.startSec * pxPerSec
                 pressMouseX = m.x
-                curMouseX = m.x
+                pressMouseY = m.y
                 pressInfo = timeline.clipInfo(clipRoot.clipId)
-                if (m.x < 8) pressedSize = "left"
-                else if (m.x > width - 8) pressedSize = "right"
-                else pressedSize = "move"
-                drag.target = pressedSize === "move" ? clipRoot : null
+
+                if (m.x < 8) {
+                    dragMode = "left_trim"
+                } else if (m.x > width - 8) {
+                    dragMode = "right_trim"
+                } else {
+                    dragMode = "move"
+                    clipRoot.isDragging = true
+                }
             }
-            onPositionChanged: (m) => { curMouseX = m.x }
-            onReleased: {
+
+            onPositionChanged: (m) => {
+                if (!pressed) return
+
+                if (dragMode === "move") {
+                    var dx = (m.x - pressMouseX)
+                    clipRoot.dragOffsetX += dx
+
+                    // Vertical dragging across tracks
+                    var mapped = mapToItem(rulerCol, m.x, m.y)
+                    var targetTrack = findTrackAtY(mapped.y)
+                    if (targetTrack !== "") {
+                        root.hoveredTrackId = targetTrack
+                    }
+                } else if (dragMode === "left_trim") {
+                    var dx = (m.x - pressMouseX)
+                    // Visual feedback during trim
+                    clipRoot.dragOffsetX += dx
+                    clipRoot.width = Math.max(8, clipRoot.width - dx)
+                } else if (dragMode === "right_trim") {
+                    var dx = (m.x - pressMouseX)
+                    clipRoot.width = Math.max(8, clipRoot.width + dx)
+                    pressMouseX = m.x
+                }
+            }
+
+            onReleased: (m) => {
+                clipRoot.isDragging = false
+                root.activeDragClipId = ""
+                var destTrack = root.hoveredTrackId
+                root.hoveredTrackId = ""
+
                 if (pressInfo === null || pressInfo.clipId === undefined) {
-                    pressedSize = ""
+                    clipRoot.dragOffsetX = 0
+                    clipRoot.dragOffsetY = 0
+                    dragMode = ""
                     return
                 }
-                if (pressedSize === "move") {
-                    var ns = Math.max(0, clipRoot.x / pxPerSec)
-                    ns = session.snapTime(ns)
-                    clipRoot.x = pressX
-                    session.moveClipTo(clipRoot.clipId, ns)
-                } else {
-                    var dxSec = (curMouseX - pressMouseX) / pxPerSec
-                    if (pressedSize === "left") {
-                        var newStart = session.snapTime(pressInfo.startSec + dxSec)
-                        var effectiveDx = newStart - pressInfo.startSec
-                        session.trimClip(clipRoot.clipId,
-                            pressInfo.sourceInSec + effectiveDx,
-                            pressInfo.sourceInSec + pressInfo.durationSec,
-                            newStart)
+
+                if (dragMode === "move") {
+                    var finalPx = pressStartX + clipRoot.dragOffsetX
+                    var targetSec = Math.max(0, finalPx / pxPerSec)
+                    targetSec = session.snapTime(targetSec)
+
+                    clipRoot.dragOffsetX = 0
+                    clipRoot.dragOffsetY = 0
+
+                    if (destTrack !== "" && destTrack !== clipRoot.currentTrackId) {
+                        session.moveClipToTrack(clipRoot.clipId, destTrack, targetSec)
                     } else {
-                        var newEnd = session.snapTime(pressInfo.startSec + pressInfo.durationSec + dxSec)
-                        var newDur = Math.max(0.1, newEnd - pressInfo.startSec)
-                        session.trimClip(clipRoot.clipId,
-                            pressInfo.sourceInSec,
-                            pressInfo.sourceInSec + newDur,
-                            pressInfo.startSec)
+                        session.moveClipTo(clipRoot.clipId, targetSec)
                     }
+                } else if (dragMode === "left_trim") {
+                    var dxSec = clipRoot.dragOffsetX / pxPerSec
+                    clipRoot.dragOffsetX = 0
+                    var newStart = session.snapTime(pressInfo.startSec + dxSec)
+                    var effectiveDx = newStart - pressInfo.startSec
+                    session.trimClip(clipRoot.clipId,
+                        pressInfo.sourceInSec + effectiveDx,
+                        pressInfo.sourceInSec + pressInfo.durationSec,
+                        newStart)
+                } else if (dragMode === "right_trim") {
+                    var newDur = Math.max(0.1, clipRoot.width / pxPerSec)
+                    session.trimClip(clipRoot.clipId,
+                        pressInfo.sourceInSec,
+                        pressInfo.sourceInSec + newDur,
+                        pressInfo.startSec)
                 }
-                pressedSize = ""
+
+                dragMode = ""
                 pressInfo = null
             }
         }
     }
 
-    // ---- 2026 Sleek Transition Badge Component ----
+    // Helper: Find Track ID by vertical Y position in rulerCol
+    function findTrackAtY(y) {
+        var currentY = root.rulerH
+        var tracks = timeline.tracks
+        for (var i = 0; i < tracks.length; ++i) {
+            var t = tracks[i]
+            var h = t.kind === "video" ? 56 : (t.kind === "audio" ? 46 : 40)
+            if (y >= currentY && y < currentY + h) {
+                return t.trackId
+            }
+            currentY += h
+        }
+        return ""
+    }
+
+    // ---- CapCut Sleek Transition Badge Component ----
     component TransitionBlock : Rectangle {
         id: transBadge
         property string transId: ""
@@ -639,10 +831,10 @@ Rectangle {
         y: 4
         width: Math.max(20, durationSec * pxPerSec)
         height: laneHeight - 8
-        radius: Theme.radiusSmall
+        radius: 4
         color: selected ? "#0284C7" : "#0369A1"
         opacity: 0.9
-        border.color: selected ? Theme.cyan : "#BAE6FD"
+        border.color: selected ? Theme.accent : "#BAE6FD"
         border.width: selected ? 2 : 1
         z: 10
 
@@ -671,5 +863,22 @@ Rectangle {
             cursorShape: Qt.PointingHandCursor
             onClicked: selection.selectTransition(transBadge.transId)
         }
+    }
+
+    // Format ruler markings: 00:00, 00:03, 00:06
+    function formatRulerTime(sec) {
+        var m = Math.floor(sec / 60)
+        var s = sec % 60
+        return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+    }
+
+    // Format playhead pill: 00:00:00
+    function formatPlayheadPill(sec) {
+        var s = Math.max(0, sec)
+        var m = Math.floor(s / 60)
+        var remSec = Math.floor(s % 60)
+        var frame = Math.floor((s - Math.floor(s)) * 30)
+        function pad(n) { return (n < 10 ? "0" : "") + n }
+        return pad(m) + ":" + pad(remSec) + ":" + pad(frame)
     }
 }

@@ -39,8 +39,8 @@ FramePlan Evaluator::evaluateVideoAt(const core::Sequence& seq, const core::Rati
                 placed.sourceTime = from->mapToSource(t);
                 placed.zOrder = z++;
                 placed.isText = false;
-                placed.transform = from->transform;
-                placed.opacity = from->opacity;
+                placed.transform = from->evaluateTransformAt(t);
+                placed.opacity = from->evaluateOpacityAt(t);
                 placed.effects = from->effects;
                 placed.secondaryEffects = to->effects;
 
@@ -84,8 +84,8 @@ FramePlan Evaluator::evaluateVideoAt(const core::Sequence& seq, const core::Rati
                 placed.sourceTime = clip.mapToSource(t);
                 placed.zOrder = z++;
                 placed.isText = track.kind == core::TrackKind::Text || !clip.text.empty();
-                placed.transform = clip.transform;
-                placed.opacity = clip.opacity;
+                placed.transform = clip.evaluateTransformAt(t);
+                placed.opacity = clip.evaluateOpacityAt(t);
                 placed.effects = clip.effects;
                 plan.layers.push_back(std::move(placed));
             }
@@ -136,7 +136,7 @@ std::vector<PlacedClip> Evaluator::evaluateAudioAt(const core::Sequence& seq,
                 placedFrom.trackKind = track.kind;
                 placedFrom.sourceTime = from->mapToSource(t);
                 placedFrom.zOrder = z++;
-                placedFrom.opacity = from->opacity * (1.0 - progress);
+                placedFrom.opacity = from->evaluateOpacityAt(t) * (1.0 - progress);
                 out.push_back(std::move(placedFrom));
 
                 // Incoming clip
@@ -146,7 +146,7 @@ std::vector<PlacedClip> Evaluator::evaluateAudioAt(const core::Sequence& seq,
                 placedTo.trackKind = track.kind;
                 placedTo.sourceTime = to->mapToSource(t);
                 placedTo.zOrder = z++;
-                placedTo.opacity = to->opacity * progress;
+                placedTo.opacity = to->evaluateOpacityAt(t) * progress;
                 out.push_back(std::move(placedTo));
             }
         }
@@ -170,7 +170,7 @@ std::vector<PlacedClip> Evaluator::evaluateAudioAt(const core::Sequence& seq,
                 placed.trackKind = track.kind;
                 placed.sourceTime = clip.mapToSource(t);
                 placed.zOrder = z++;
-                placed.opacity = clip.opacity;
+                placed.opacity = clip.evaluateOpacityAt(t);
                 out.push_back(std::move(placed));
             }
         }

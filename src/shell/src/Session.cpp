@@ -289,6 +289,16 @@ bool Session::moveClipTo(const QString& clipId, double newStartSec) {
                                                  rationalFromSeconds(newStartSec)));
 }
 
+bool Session::moveClipToTrack(const QString& clipId, const QString& newTrackId, double newStartSec) {
+    if (clipId.isEmpty() || newTrackId.isEmpty()) {
+        return false;
+    }
+    return execute(commands::makeMoveClipToTrackCommand(clipId.toStdString(),
+                                                        newTrackId.toStdString(),
+                                                        rationalFromSeconds(newStartSec)));
+}
+
+
 bool Session::trimClip(const QString& clipId, double newInSec, double newOutSec,
                        double newStartSec) {
     if (clipId.isEmpty()) {
@@ -765,6 +775,114 @@ bool Session::exportSubtitlesFile(const QUrl& url) const {
     const QString srt = exportSubtitles();
     f.write(srt.toUtf8());
     return true;
+}
+
+bool Session::setClipKeyframe(const QString& clipId, double seqTimeSec,
+                             double scale, double x, double y,
+                             double rotationDeg, double opacity,
+                             const QString& easing) {
+    if (clipId.isEmpty()) return false;
+    core::Keyframe kf;
+    kf.seqTime = rationalFromSeconds(seqTimeSec);
+    kf.transform.scale = scale;
+    kf.transform.x = x;
+    kf.transform.y = y;
+    kf.transform.rotationDeg = rotationDeg;
+    kf.opacity = std::max(0.0, std::min(1.0, opacity));
+    kf.easing = easing.isEmpty() ? "linear" : easing.toStdString();
+    return execute(commands::makeSetKeyframeCommand(clipId.toStdString(), std::move(kf)));
+}
+
+bool Session::removeClipKeyframe(const QString& clipId, double seqTimeSec) {
+    if (clipId.isEmpty()) return false;
+    return execute(commands::makeRemoveKeyframeCommand(clipId.toStdString(), rationalFromSeconds(seqTimeSec)));
+}
+
+bool Session::setClipFade(const QString& clipId, double fadeInSec, double fadeOutSec) {
+    if (clipId.isEmpty()) return false;
+    return execute(commands::makeSetFadeCommand(clipId.toStdString(), fadeInSec, fadeOutSec));
+}
+
+bool Session::setSequenceFormat(int width, int height) {
+    if (width <= 0 || height <= 0) return false;
+    return execute(commands::makeSetSequenceFormatCommand(width, height));
+}
+
+bool Session::setSequenceAspectPreset(const QString& preset) {
+    if (preset == "16:9") {
+        return setSequenceFormat(1920, 1080);
+    } else if (preset == "9:16") {
+        return setSequenceFormat(1080, 1920);
+    } else if (preset == "1:1") {
+        return setSequenceFormat(1080, 1080);
+    } else if (preset == "4:5") {
+        return setSequenceFormat(1080, 1350);
+    } else if (preset == "21:9") {
+        return setSequenceFormat(2560, 1080);
+    }
+    return false;
+}
+
+QString Session::getSequenceAspectPreset() const {
+    const core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return "16:9";
+    if (seq->width == 1920 && seq->height == 1080) return "16:9";
+    if (seq->width == 1080 && seq->height == 1920) return "9:16";
+    if (seq->width == 1080 && seq->height == 1080) return "1:1";
+    if (seq->width == 1080 && seq->height == 1350) return "4:5";
+    if (seq->width == 2560 && seq->height == 1080) return "21:9";
+    return QString::number(seq->width) + "x" + QString::number(seq->height);
+}
+
+bool Session::normalizeClipAudio(const QString& clipId, double targetLufs) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    core::Clip* clip = seq->findClip(clipId.toStdString());
+    if (clip == nullptr) return false;
+
+    auto assetIt = project_.assets.find(clip->assetId);
+    if (assetIt == project_.assets.end()) return false;
+
+    media_ffmpeg::AudioDecoder dec;
+    if (dec.open(assetIt->second.path).isErr() || !dec.hasAudio()) return false;
+    if (dec.seek(clip->sourceIn).isErr()) return false;
+
+    std::vector<float> pcmFloat;
+    const core::Rational spanDur = clip->sourceOut - clip->sourceIn;
+    const int targetSamples = static_cast<int>(std::ceil(static_cast<double>(spanDur) * 48000.0)) * 2;
+
+    while (static_cast<int>(pcmFloat.size()) < targetSamples) {
+        auto chunkRes = dec.nextChunk(4096);
+        if (chunkRes.isErr()) break;
+        const auto& chunk = chunkRes.value();
+        if (chunk.pcm.empty()) break;
+        for (std::int16_t s : chunk.pcm) {
+            pcmFloat.push_back(static_cast<float>(s) / 32768.0f);
+        }
+    }
+    if (pcmFloat.empty()) return false;
+
+    double curLufs = ai::AudioAnalysis::calculateIntegratedLufs(pcmFloat.data(), pcmFloat.size(), 48000, 2);
+    if (curLufs <= -60.0) return true;
+
+    double deltaDb = targetLufs - curLufs;
+    double gain = std::pow(10.0, deltaDb / 20.0);
+    double newOpacity = std::max(0.05, std::min(2.0, clip->opacity * gain));
+    return execute(commands::makeSetOpacityCommand(clip->id, newOpacity));
+}
+
+bool Session::denoiseClipAudio(const QString& clipId, double rumbleCutoffHz) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    core::Clip* clip = seq->findClip(clipId.toStdString());
+    if (clip == nullptr) return false;
+
+    core::Effect eff;
+    eff.type = "voice_denoise";
+    eff.enabled = true;
+    eff.params["rumble_cutoff_hz"] = rumbleCutoffHz;
+    eff.params["intensity"] = 0.7;
+    return execute(commands::makeAddEffectCommand(clip->id, std::move(eff)));
 }
 
 } // namespace editor::shell

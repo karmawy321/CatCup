@@ -206,6 +206,9 @@ QVariantMap TimelineModel::clipInfo(const QString& clipId) const {
     m["saturation"] = saturation;
     m["temperature"] = temp;
     m["tint"] = tint;
+    m["fadeInSec"] = clip->fadeInSec;
+    m["fadeOutSec"] = clip->fadeOutSec;
+    m["keyframeCount"] = static_cast<int>(clip->keyframes.size());
     return m;
 }
 

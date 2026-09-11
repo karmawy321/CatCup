@@ -70,6 +70,13 @@ struct Transform {
     double rotationDeg = 0.0;
 };
 
+struct Keyframe {
+    Rational seqTime{0};
+    Transform transform{};
+    double opacity = 1.0;
+    std::string easing = "linear"; // "linear", "ease_in", "ease_out", "ease_in_out"
+};
+
 struct Clip {
     Id id;
     Id assetId;       // empty for generated text clips
@@ -82,10 +89,16 @@ struct Clip {
     Transform transform{};
     std::vector<Effect> effects;
     Rational speed{1, 1};
+    std::vector<Keyframe> keyframes;
+    double fadeInSec = 0.0;
+    double fadeOutSec = 0.0;
     // Text payload (Stage 1 title). Stays here so preview/export share it.
     std::string text;
     std::string fontFamily;
     double fontSizePt = 48.0;
+
+    [[nodiscard]] Transform evaluateTransformAt(const Rational& t) const;
+    [[nodiscard]] double evaluateOpacityAt(const Rational& t) const;
 
     [[nodiscard]] Rational seqDuration() const {
         if (speed.num() <= 0) {

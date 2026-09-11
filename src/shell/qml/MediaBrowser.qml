@@ -3,8 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 
-// Left column: 2026 Obsidian Asset Browser with Media, Text, Transitions,
-// Effects, and Smart AI Tools.
+// Left column: CapCut Asset Browser with horizontal icon-tabs,
+// sub-sidebar navigation, media cards with 'Added' chips, and AI tools.
 
 Rectangle {
     id: root
@@ -14,41 +14,67 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 10
-        spacing: 8
+        spacing: 0
 
-        // Modern Segmented Tab Bar
+        // ---- 1. CapCut Icon-Tabs Header ----
         Rectangle {
             Layout.fillWidth: true
-            height: 36
-            radius: Theme.radiusMedium
-            color: Theme.bgApp
+            height: 48
+            color: Theme.bgSidebar
             border.color: Theme.borderSubtle
             border.width: 1
 
             RowLayout {
                 anchors.fill: parent
-                anchors.margins: 3
+                anchors.leftMargin: 6
+                anchors.rightMargin: 6
                 spacing: 2
 
                 Repeater {
-                    model: ["Media", "Text", "Trans", "FX", "Smart"]
+                    model: [
+                        { name: "Media", icon: "◫" },
+                        { name: "Audio", icon: "♫" },
+                        { name: "Text", icon: "T" },
+                        { name: "Effects", icon: "✦" },
+                        { name: "Transitions", icon: "⧖" },
+                        { name: "Captions", icon: "CC" },
+                        { name: "Smart", icon: "★" }
+                    ]
+
+
                     delegate: Rectangle {
-                        id: tabDelegate
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        radius: 4
-                        color: tabsStack.currentIndex === index ? Theme.bgActive : (tabMouse.containsMouse ? Theme.bgElevated : "transparent")
-                        border.color: tabsStack.currentIndex === index ? Theme.borderFocus : "transparent"
-                        border.width: 1
+                        color: "transparent"
 
-                        Text {
+                        Column {
                             anchors.centerIn: parent
-                            text: modelData
-                            font.family: Theme.fontBody
-                            font.pixelSize: 11
-                            font.weight: tabsStack.currentIndex === index ? Font.Bold : Font.Normal
-                            color: tabsStack.currentIndex === index ? Theme.accent : (tabMouse.containsMouse ? Theme.textPrimary : Theme.textSecondary)
+                            spacing: 1
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.icon
+                                font.pixelSize: 13
+                                font.bold: true
+                                color: tabStack.currentIndex === index ? Theme.accent : (tabMouse.containsMouse ? Theme.textPrimary : Theme.textTertiary)
+                            }
+
+                            Text {
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                text: modelData.name
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                color: tabStack.currentIndex === index ? Theme.accent : (tabMouse.containsMouse ? Theme.textPrimary : Theme.textTertiary)
+                            }
+                        }
+
+                        // Bottom Cyan active indicator line
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            height: 2
+                            color: tabStack.currentIndex === index ? Theme.accent : "transparent"
                         }
 
                         MouseArea {
@@ -56,128 +82,204 @@ Rectangle {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: tabsStack.currentIndex = index
+                            onClicked: tabStack.currentIndex = index
                         }
                     }
                 }
             }
         }
 
-        // Modern Search Input
-        Rectangle {
-            Layout.fillWidth: true
-            height: 32
-            radius: Theme.radiusSmall
-            color: Theme.bgApp
-            border.color: searchInput.activeFocus ? Theme.borderFocus : Theme.borderMedium
-            border.width: 1
-
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 6
-
-                Text {
-                    text: "🔍"
-                    font.pixelSize: 11
-                    color: Theme.textTertiary
-                }
-
-                TextInput {
-                    id: searchInput
-                    Layout.fillWidth: true
-                    font.family: Theme.fontBody
-                    font.pixelSize: 11
-                    color: Theme.textPrimary
-                    selectByMouse: true
-
-                    Text {
-                        anchors.fill: parent
-                        text: "Search assets…"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 11
-                        color: Theme.textTertiary
-                        visible: parent.text === "" && !parent.activeFocus
-                        verticalAlignment: Text.AlignVCenter
-                    }
-                }
-
-                Text {
-                    visible: searchInput.text !== ""
-                    text: "✕"
-                    font.pixelSize: 10
-                    color: Theme.textTertiary
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: searchInput.text = ""
-                    }
-                }
-            }
-        }
-
-        // Tab Pages
-        StackLayout {
-            id: tabsStack
-            currentIndex: 0
+        // ---- 2. Main Content Split: Sub-sidebar + Content Area ----
+        RowLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            spacing: 0
 
-            // ==================== TAB 0: MEDIA ====================
-            ColumnLayout {
-                spacing: 8
+            // Sub-sidebar (Left Rail)
+            Rectangle {
+                Layout.preferredWidth: 80
+                Layout.fillHeight: true
+                color: Theme.bgSubSidebar
+                border.color: Theme.borderSubtle
+                border.width: 1
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.topMargin: 8
+                    spacing: 4
 
-                    StudioButton {
-                        text: "Import Media"
-                        iconText: "+"
-                        variant: "accent"
+                    Text {
+                        text: "Import"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 10
+                        font.weight: Font.DemiBold
+                        color: Theme.textTertiary
+                        anchors.left: parent.left
+                        anchors.leftMargin: 8
+                    }
+
+                    Rectangle {
                         Layout.fillWidth: true
-                        onClicked: importDialog.open()
-                    }
+                        height: 26
+                        radius: 4
+                        color: subNavMedia.containsMouse ? Theme.bgHover : Theme.bgElevated
 
-                    StudioButton {
-                        text: "Add"
-                        iconText: "↓"
-                        variant: "secondary"
-                        enabled: mediaList.currentIndex >= 0
-                        onClicked: addCurrent()
-                    }
-                }
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            text: "Media"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            color: Theme.accent
+                        }
 
-                ListView {
-                    id: mediaList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 6
-                    model: library
-
-                    delegate: Rectangle {
-                        id: mediaCard
-                        width: mediaList.width
-                        visible: assetName.toLowerCase().indexOf(searchInput.text.toLowerCase()) >= 0
-                        height: visible ? 68 : 0
-                        radius: Theme.radiusMedium
-                        color: ListView.isCurrentItem ? Theme.bgActive : (cardMouse.containsMouse ? Theme.bgHover : Theme.bgCard)
-                        border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
-                        border.width: 1
-
-                        RowLayout {
+                        MouseArea {
+                            id: subNavMedia
                             anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 8
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tabStack.currentIndex = 0
+                        }
+                    }
 
-                            // Thumbnail with duration chip
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 26
+                        radius: 4
+                        color: "transparent"
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.left: parent.left
+                            anchors.leftMargin: 10
+                            text: "Smart AI"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            color: Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: tabStack.currentIndex = 6
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            // Content Area Stack
+            StackLayout {
+                id: tabStack
+                currentIndex: 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                // ==================== TAB 0: MEDIA ====================
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+
+                    // Header Row: + Import Pill & Search
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+
+                        // + Import Pill Button
+                        Rectangle {
+                            implicitWidth: 84
+                            implicitHeight: 26
+                            radius: 13
+                            color: importMouse.containsMouse ? Theme.bgHover : Theme.bgElevated
+                            border.color: Theme.borderMedium
+                            border.width: 1
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 4
+                                Text { text: "+"; font.pixelSize: 12; font.bold: true; color: Theme.accent }
+                                Text { text: "Import"; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                            }
+
+                            MouseArea {
+                                id: importMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: importDialog.open()
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Search box
+                        Rectangle {
+                            implicitWidth: 100
+                            implicitHeight: 24
+                            radius: 4
+                            color: Theme.bgCard
+                            border.color: searchInput.activeFocus ? Theme.borderFocus : Theme.borderMedium
+                            border.width: 1
+
+                            TextInput {
+                                id: searchInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                color: Theme.textPrimary
+                                selectByMouse: true
+
+                                Text {
+                                    anchors.fill: parent
+                                    text: "Search…"
+                                    font.family: Theme.fontBody
+                                    font.pixelSize: 10
+                                    color: Theme.textTertiary
+                                    visible: parent.text === "" && !parent.activeFocus
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
+
+                    // "All" label
+                    Text {
+                        text: "All"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 10
+                        color: Theme.textTertiary
+                    }
+
+                    // Media Cards List (CapCut Style)
+                    ListView {
+                        id: mediaList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 8
+                        model: library
+
+                        delegate: ColumnLayout {
+                            width: mediaList.width
+                            visible: assetName.toLowerCase().indexOf(searchInput.text.toLowerCase()) >= 0
+                            height: visible ? 100 : 0
+                            spacing: 4
+
+                            // Card Frame
                             Rectangle {
-                                Layout.preferredWidth: 96
-                                Layout.preferredHeight: 54
-                                radius: Theme.radiusSmall
-                                color: "#000000"
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 74
+                                radius: 4
+                                color: ListView.isCurrentItem ? Theme.bgActive : (cardMouse.containsMouse ? Theme.bgHover : Theme.bgCard)
+                                border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
+                                border.width: 1
                                 clip: true
 
                                 Image {
@@ -188,12 +290,32 @@ Rectangle {
                                     source: "image://thumb/" + assetId
                                 }
 
-                                // Duration pill overlay
+                                // Top-Left "Added" Chip (Exact CapCut style)
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.margins: 4
+                                    radius: 2
+                                    color: "#CC18181C"
+                                    implicitWidth: addedText.implicitWidth + 8
+                                    implicitHeight: addedText.implicitHeight + 2
+
+                                    Text {
+                                        id: addedText
+                                        anchors.centerIn: parent
+                                        text: "Added"
+                                        font.family: Theme.fontBody
+                                        font.pixelSize: 8
+                                        color: "#FFFFFF"
+                                    }
+                                }
+
+                                // Bottom-Right Duration Chip
                                 Rectangle {
                                     anchors.right: parent.right
                                     anchors.bottom: parent.bottom
-                                    anchors.margins: 3
-                                    radius: 3
+                                    anchors.margins: 4
+                                    radius: 2
                                     color: "#CC000000"
                                     implicitWidth: durText.implicitWidth + 6
                                     implicitHeight: durText.implicitHeight + 2
@@ -207,544 +329,434 @@ Rectangle {
                                         color: "#FFFFFF"
                                     }
                                 }
+
+                                MouseArea {
+                                    id: cardMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: mediaList.currentIndex = index
+                                    onDoubleClicked: addCurrent()
+                                }
                             }
 
-                            // Asset Details
-                            ColumnLayout {
+                            // Asset File Name Label
+                            Text {
+                                text: assetName
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                color: Theme.textSecondary
+                                elide: Text.ElideRight
                                 Layout.fillWidth: true
-                                spacing: 2
-
-                                Text {
-                                    text: assetName
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    color: Theme.textPrimary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-
-                                Row {
-                                    spacing: 4
-                                    Rectangle {
-                                        radius: 2
-                                        color: assetKind === "video" ? "#163836" : (assetKind === "audio" ? "#183820" : "#2E1C44")
-                                        implicitWidth: kindText.implicitWidth + 6
-                                        implicitHeight: kindText.implicitHeight + 2
-
-                                        Text {
-                                            id: kindText
-                                            anchors.centerIn: parent
-                                            text: assetKind.toUpperCase()
-                                            font.family: Theme.fontMono
-                                            font.pixelSize: 8
-                                            font.bold: true
-                                            color: assetKind === "video" ? Theme.cyan : (assetKind === "audio" ? Theme.accent : Theme.purple)
-                                        }
-                                    }
-                                }
                             }
-                        }
-
-                        MouseArea {
-                            id: cardMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: mediaList.currentIndex = index
-                            onDoubleClicked: addCurrent()
                         }
                     }
-                }
-            }
 
-            // ==================== TAB 1: TEXT ====================
-            ScrollView {
-                contentWidth: availableWidth
-                clip: true
-
-                ColumnLayout {
-                    width: parent.width
-                    spacing: 10
-
-                    StudioCard {
-                        title: "Title & Lower Thirds"
-                        iconText: "🔤"
+                    // Bottom: Add to timeline button
+                    Rectangle {
                         Layout.fillWidth: true
+                        height: 28
+                        radius: 4
+                        color: addMouse.containsMouse ? Theme.accentHover : Theme.accent
+                        opacity: mediaList.currentIndex >= 0 ? 1.0 : 0.4
 
                         Text {
-                            text: "Title Text"
+                            anchors.centerIn: parent
+                            text: "+ Add to Timeline"
                             font.family: Theme.fontBody
                             font.pixelSize: 11
-                            color: Theme.textSecondary
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 32
-                            radius: Theme.radiusSmall
-                            color: Theme.bgElevated
-                            border.color: titleField.activeFocus ? Theme.borderFocus : Theme.borderMedium
-                            border.width: 1
-
-                            TextInput {
-                                id: titleField
-                                anchors.fill: parent
-                                anchors.margins: 6
-                                font.family: Theme.fontBody
-                                font.pixelSize: 12
-                                color: Theme.textPrimary
-                                selectByMouse: true
-                                text: "CatCup Cinematic Title"
-                            }
-                        }
-
-                        StudioButton {
-                            text: "Insert Title Clip (3s)"
-                            iconText: "✨"
-                            variant: "primary"
-                            Layout.fillWidth: true
-                            onClicked: {
-                                var id = session.addTitle(titleField.text)
-                                if (id !== "")
-                                    selection.select(id)
-                            }
-                        }
-
-                        Text {
-                            text: "Titles land on T1 at the timeline end. Select the title on the timeline to customize font, scale, and color in the Inspector."
-                            wrapMode: Text.WordWrap
-                            font.family: Theme.fontBody
-                            font.pixelSize: 10
-                            color: Theme.textTertiary
-                            Layout.fillWidth: true
-                        }
-                    }
-                }
-            }
-
-            // ==================== TAB 2: TRANSITIONS ====================
-            ColumnLayout {
-                spacing: 8
-
-                ListView {
-                    id: transitionList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 6
-                    model: ListModel {
-                        ListElement { name: "Crossfade"; typeName: "crossfade"; desc: "Smooth linear cross-dissolve"; iconSymbol: "⧖" }
-                        ListElement { name: "Dip to Black"; typeName: "dip_black"; desc: "Fade through deep obsidian black"; iconSymbol: "◼" }
-                        ListElement { name: "Dip to White"; typeName: "dip_white"; desc: "Flash through white burst"; iconSymbol: "◻" }
-                        ListElement { name: "Wipe Left"; typeName: "wipe_left"; desc: "Horizontal wipe sliding left"; iconSymbol: "◀" }
-                        ListElement { name: "Wipe Right"; typeName: "wipe_right"; desc: "Horizontal wipe sliding right"; iconSymbol: "▶" }
-                        ListElement { name: "Wipe Up"; typeName: "wipe_up"; desc: "Vertical wipe sliding up"; iconSymbol: "▲" }
-                        ListElement { name: "Wipe Down"; typeName: "wipe_down"; desc: "Vertical wipe sliding down"; iconSymbol: "▼" }
-                    }
-
-                    delegate: Rectangle {
-                        width: transitionList.width
-                        visible: name.toLowerCase().indexOf(searchInput.text.toLowerCase()) >= 0
-                        height: visible ? 54 : 0
-                        radius: Theme.radiusMedium
-                        color: ListView.isCurrentItem ? Theme.bgActive : (transMouse.containsMouse ? Theme.bgHover : Theme.bgCard)
-                        border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 8
-
-                            Rectangle {
-                                Layout.preferredWidth: 36
-                                Layout.preferredHeight: 36
-                                radius: Theme.radiusSmall
-                                color: Theme.bgElevated
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: iconSymbol
-                                    font.pixelSize: 14
-                                    color: Theme.orange
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                Text {
-                                    text: name
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    color: Theme.textPrimary
-                                }
-                                Text {
-                                    text: desc
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 9
-                                    color: Theme.textTertiary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
+                            font.weight: Font.DemiBold
+                            color: "#000000"
                         }
 
                         MouseArea {
-                            id: transMouse
+                            id: addMouse
                             anchors.fill: parent
+                            enabled: mediaList.currentIndex >= 0
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: transitionList.currentIndex = index
-                            onDoubleClicked: applyCurrentTransition()
+                            onClicked: addCurrent()
                         }
                     }
                 }
 
-                StudioButton {
-                    text: "Apply Transition (1.0s)"
-                    iconText: "⚡"
-                    variant: "accent"
-                    Layout.fillWidth: true
-                    enabled: transitionList.currentIndex >= 0 && selection.selectedClipId !== ""
-                    onClicked: applyCurrentTransition()
-                }
-            }
-
-            // ==================== TAB 3: EFFECTS ====================
-            ColumnLayout {
-                spacing: 8
-
-                ListView {
-                    id: effectList
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    spacing: 6
-                    model: ListModel {
-                        ListElement { name: "Vignette"; typeName: "vignette"; desc: "Cinematic dark edge shading"; isPreset: false; iconSymbol: "◎" }
-                        ListElement { name: "Box Blur"; typeName: "blur"; desc: "Soft focal blur effect"; isPreset: false; iconSymbol: "🌫" }
-                        ListElement { name: "Sharpen"; typeName: "sharpen"; desc: "Crisp edge definition enhancer"; isPreset: false; iconSymbol: "✦" }
-                        ListElement { name: "Chroma Key"; typeName: "chroma_key"; desc: "Green screen background removal"; isPreset: false; iconSymbol: "🟩" }
-                        ListElement { name: "Warm Cinema"; typeName: "preset_warm"; desc: "Golden hour warm tones (+temp, +contrast)"; isPreset: true; iconSymbol: "🌅" }
-                        ListElement { name: "Cool Film"; typeName: "preset_cool"; desc: "Modern teal film look (-temp, +contrast)"; isPreset: true; iconSymbol: "❄" }
-                        ListElement { name: "Black & White"; typeName: "preset_bw"; desc: "Classic monochrome (0 saturation)"; isPreset: true; iconSymbol: "◑" }
-                        ListElement { name: "Vibrant Punch"; typeName: "preset_vibrant"; desc: "Rich color pop (+saturation, +contrast)"; isPreset: true; iconSymbol: "🌈" }
-                    }
-
-                    delegate: Rectangle {
-                        width: effectList.width
-                        visible: name.toLowerCase().indexOf(searchInput.text.toLowerCase()) >= 0
-                        height: visible ? 54 : 0
-                        radius: Theme.radiusMedium
-                        color: ListView.isCurrentItem ? Theme.bgActive : (fxMouse.containsMouse ? Theme.bgHover : Theme.bgCard)
-                        border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
-                        border.width: 1
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: 8
-                            spacing: 8
-
-                            Rectangle {
-                                Layout.preferredWidth: 36
-                                Layout.preferredHeight: 36
-                                radius: Theme.radiusSmall
-                                color: Theme.bgElevated
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: iconSymbol
-                                    font.pixelSize: 14
-                                }
-                            }
-
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 2
-
-                                Text {
-                                    text: name
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 11
-                                    font.weight: Font.DemiBold
-                                    color: Theme.textPrimary
-                                }
-                                Text {
-                                    text: desc
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 9
-                                    color: Theme.textTertiary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
-                            }
-                        }
-
-                        MouseArea {
-                            id: fxMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: effectList.currentIndex = index
-                            onDoubleClicked: applyCurrentEffect()
-                        }
-                    }
-                }
-
-                StudioButton {
-                    text: "Apply Effect to Clip"
-                    iconText: "✨"
-                    variant: "accent"
-                    Layout.fillWidth: true
-                    enabled: effectList.currentIndex >= 0 && selection.selectedClipId !== ""
-                    onClicked: applyCurrentEffect()
-                }
-            }
-
-            // ==================== TAB 4: SMART TOOLS ====================
-            ScrollView {
-                contentWidth: availableWidth
-                clip: true
-
+                // ==================== TAB 1: AUDIO ====================
                 ColumnLayout {
-                    width: parent.width
-                    spacing: 10
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
 
-                    // Card 1: AI Auto-Captions
-                    StudioCard {
-                        title: "AI Auto-Captions"
-                        iconText: "💬"
-                        collapsible: true
+                    Text { text: "Audio Library"; font.family: Theme.fontBody; font.pixelSize: 12; font.bold: true; color: Theme.textPrimary }
+                    Text { text: "Import audio tracks, sound effects, or background music."; font.family: Theme.fontBody; font.pixelSize: 10; color: Theme.textTertiary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
+                    StudioButton {
+                        text: "Import Audio File"
+                        iconText: "+"
+                        variant: "primary"
                         Layout.fillWidth: true
+                        onClicked: importDialog.open()
+                    }
 
-                        Text {
-                            text: "Paste transcript / speech text:"
+                    Item { Layout.fillHeight: true }
+                }
+
+                // ==================== TAB 2: TEXT ====================
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+
+                    Text { text: "Title Text"; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textSecondary }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 32
+                        radius: 4
+                        color: Theme.bgCard
+                        border.color: titleInput.activeFocus ? Theme.borderFocus : Theme.borderMedium
+                        border.width: 1
+
+                        TextInput {
+                            id: titleInput
+                            anchors.fill: parent
+                            anchors.margins: 6
                             font.family: Theme.fontBody
-                            font.pixelSize: 10
-                            color: Theme.textSecondary
+                            font.pixelSize: 12
+                            color: Theme.textPrimary
+                            selectByMouse: true
+                            text: "Default Title"
+                        }
+                    }
+
+                    StudioButton {
+                        text: "+ Add Default Text"
+                        variant: "primary"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            var id = session.addTitle(titleInput.text)
+                            if (id !== "") selection.select(id)
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+
+                // ==================== TAB 3: EFFECTS ====================
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+
+                    ListView {
+                        id: fxList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 6
+                        model: ListModel {
+                            ListElement { name: "Vignette"; typeName: "vignette"; desc: "Soft edge shading" }
+                            ListElement { name: "Box Blur"; typeName: "blur"; desc: "Gaussian blur filter" }
+                            ListElement { name: "Sharpen"; typeName: "sharpen"; desc: "Detail enhancement" }
+                            ListElement { name: "Chroma Key"; typeName: "chroma_key"; desc: "Green screen removal" }
+                            ListElement { name: "Warm Cinema"; typeName: "preset_warm"; desc: "Golden hour tones" }
+                            ListElement { name: "Cool Film"; typeName: "preset_cool"; desc: "Modern teal film look" }
+                            ListElement { name: "Black & White"; typeName: "preset_bw"; desc: "Classic monochrome" }
+                            ListElement { name: "Vibrant Punch"; typeName: "preset_vibrant"; desc: "High saturation pop" }
                         }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            height: 64
-                            radius: Theme.radiusSmall
-                            color: Theme.bgElevated
-                            border.color: transcriptArea.activeFocus ? Theme.borderFocus : Theme.borderMedium
+                        delegate: Rectangle {
+                            width: fxList.width
+                            height: 44
+                            radius: 4
+                            color: ListView.isCurrentItem ? Theme.bgActive : (fxM.containsMouse ? Theme.bgHover : Theme.bgCard)
+                            border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
                             border.width: 1
 
-                            ScrollView {
+                            RowLayout {
                                 anchors.fill: parent
-                                anchors.margins: 4
-                                clip: true
+                                anchors.margins: 8
+                                spacing: 8
 
-                                TextArea {
-                                    id: transcriptArea
-                                    font.family: Theme.fontBody
-                                    font.pixelSize: 11
-                                    color: Theme.textPrimary
-                                    wrapMode: Text.WordWrap
-                                    placeholderText: "Type or paste transcript here…"
+                                Text { text: "✦"; font.pixelSize: 12; color: Theme.accent }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text { text: name; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                                    Text { text: desc; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary; elide: Text.ElideRight; Layout.fillWidth: true }
                                 }
                             }
-                        }
 
-                        StudioSlider {
-                            id: wordsSlider
-                            label: "Words per Cue"
-                            from: 1
-                            to: 10
-                            stepSize: 1
-                            value: 4
-                            decimals: 0
-                            unit: "words"
-                            Layout.fillWidth: true
-                        }
-
-                        StudioButton {
-                            text: "✨ Generate Captions"
-                            variant: "primary"
-                            Layout.fillWidth: true
-                            onClicked: {
-                                if (transcriptArea.text !== "") {
-                                    session.generateAutoCaptions(transcriptArea.text, Math.round(wordsSlider.value))
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 4
-
-                            StudioButton {
-                                text: "Import SRT"
-                                compact: true
-                                variant: "secondary"
-                                Layout.fillWidth: true
-                                onClicked: srtImportDialog.open()
-                            }
-
-                            StudioButton {
-                                text: "Export SRT"
-                                compact: true
-                                variant: "secondary"
-                                Layout.fillWidth: true
-                                onClicked: srtExportDialog.open()
+                            MouseArea {
+                                id: fxM
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: fxList.currentIndex = index
+                                onDoubleClicked: applyFx()
                             }
                         }
                     }
 
-                    // Card 2: Smart Silence Cut
-                    StudioCard {
-                        title: "Smart Silence Cut"
-                        iconText: "✂"
-                        collapsible: true
+                    StudioButton {
+                        text: "Apply Effect"
+                        variant: "primary"
                         Layout.fillWidth: true
+                        enabled: fxList.currentIndex >= 0 && selection.selectedClipId !== ""
+                        onClicked: applyFx()
+                    }
+                }
 
-                        Text {
-                            text: "Detects silence in audio/video and ripple-joins speech portions."
-                            wrapMode: Text.WordWrap
-                            font.family: Theme.fontBody
-                            font.pixelSize: 10
-                            color: Theme.textTertiary
-                            Layout.fillWidth: true
+                // ==================== TAB 4: TRANSITIONS ====================
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+
+                    ListView {
+                        id: transList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        spacing: 6
+                        model: ListModel {
+                            ListElement { name: "Crossfade"; typeName: "crossfade"; desc: "Smooth linear dissolve" }
+                            ListElement { name: "Dip to Black"; typeName: "dip_black"; desc: "Fade through black" }
+                            ListElement { name: "Dip to White"; typeName: "dip_white"; desc: "Flash through white" }
+                            ListElement { name: "Wipe Left"; typeName: "wipe_left"; desc: "Slide left transition" }
+                            ListElement { name: "Wipe Right"; typeName: "wipe_right"; desc: "Slide right transition" }
+                            ListElement { name: "Wipe Up"; typeName: "wipe_up"; desc: "Slide up transition" }
+                            ListElement { name: "Wipe Down"; typeName: "wipe_down"; desc: "Slide down transition" }
                         }
 
-                        StudioSlider {
-                            id: silenceThreshSlider
-                            label: "Silence Threshold"
-                            from: -60
-                            to: -15
-                            stepSize: 1
-                            value: -35
-                            decimals: 0
-                            unit: "dB"
-                            Layout.fillWidth: true
-                        }
+                        delegate: Rectangle {
+                            width: transList.width
+                            height: 44
+                            radius: 4
+                            color: ListView.isCurrentItem ? Theme.bgActive : (trM.containsMouse ? Theme.bgHover : Theme.bgCard)
+                            border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
+                            border.width: 1
 
-                        StudioSlider {
-                            id: silenceDurSlider
-                            label: "Min Duration"
-                            from: 0.1
-                            to: 2.0
-                            stepSize: 0.1
-                            value: 0.4
-                            decimals: 1
-                            unit: "s"
-                            Layout.fillWidth: true
-                        }
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.margins: 8
+                                spacing: 8
 
-                        StudioButton {
-                            text: "Cut Silence (Ripple)"
-                            iconText: "✂"
-                            variant: "accent"
-                            Layout.fillWidth: true
-                            enabled: selection.selectedClipId !== ""
-                            onClicked: {
-                                if (selection.selectedClipId !== "") {
-                                    session.autoSilenceCut(selection.selectedClipId, silenceThreshSlider.value, silenceDurSlider.value)
+                                Text { text: "⧖"; font.pixelSize: 12; color: Theme.accent }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text { text: name; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                                    Text { text: desc; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary }
                                 }
+                            }
+
+                            MouseArea {
+                                id: trM
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: transList.currentIndex = index
+                                onDoubleClicked: applyTrans()
                             }
                         }
                     }
 
-                    // Card 3: Scene Cut Splitter
-                    StudioCard {
-                        title: "Scene Detection Split"
-                        iconText: "🎬"
-                        collapsible: true
+                    StudioButton {
+                        text: "Apply Transition"
+                        variant: "primary"
                         Layout.fillWidth: true
+                        enabled: transList.currentIndex >= 0 && selection.selectedClipId !== ""
+                        onClicked: applyTrans()
+                    }
+                }
 
-                        Text {
-                            text: "Scans video frames for cuts and splits clip into scene blocks."
-                            wrapMode: Text.WordWrap
-                            font.family: Theme.fontBody
-                            font.pixelSize: 10
-                            color: Theme.textTertiary
-                            Layout.fillWidth: true
+                // ==================== TAB 5: CAPTIONS ====================
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 8
+
+                    Text { text: "Auto Captions"; font.family: Theme.fontBody; font.pixelSize: 12; font.bold: true; color: Theme.textPrimary }
+                    Text { text: "Generate timed subtitle captions automatically from transcript."; font.family: Theme.fontBody; font.pixelSize: 10; color: Theme.textTertiary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 70
+                        radius: 4
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+
+                        ScrollView {
+                            anchors.fill: parent
+                            anchors.margins: 4
+                            clip: true
+                            TextArea {
+                                id: transInput
+                                font.family: Theme.fontBody
+                                font.pixelSize: 11
+                                color: Theme.textPrimary
+                                wrapMode: Text.WordWrap
+                                placeholderText: "Paste transcript text here…"
+                            }
                         }
+                    }
 
-                        StudioSlider {
-                            id: sceneThreshSlider
-                            label: "Cut Sensitivity"
-                            from: 0.10
-                            to: 0.60
-                            stepSize: 0.05
-                            value: 0.25
-                            decimals: 2
-                            unit: "diff"
-                            Layout.fillWidth: true
+                    StudioButton {
+                        text: "Generate Captions"
+                        variant: "primary"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            if (transInput.text !== "") session.generateAutoCaptions(transInput.text, 4)
                         }
+                    }
 
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
                         StudioButton {
-                            text: "Split at Scene Cuts"
-                            iconText: "🎬"
-                            variant: "accent"
+                            text: "Import SRT"
+                            variant: "secondary"
                             Layout.fillWidth: true
-                            enabled: selection.selectedClipId !== ""
-                            onClicked: {
-                                if (selection.selectedClipId !== "") {
-                                    session.autoSceneSplit(selection.selectedClipId, sceneThreshSlider.value)
+                            onClicked: srtImportDialog.open()
+                        }
+                        StudioButton {
+                            text: "Export SRT"
+                            variant: "secondary"
+                            Layout.fillWidth: true
+                            onClicked: srtExportDialog.open()
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+
+                // ==================== TAB 6: SMART AI ====================
+                ScrollView {
+                    contentWidth: availableWidth
+                    clip: true
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 10
+
+                        // Silence Cut
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: 4
+                            color: Theme.bgCard
+                            border.color: Theme.borderMedium
+                            border.width: 1
+                            implicitHeight: silCol.implicitHeight + 16
+
+                            ColumnLayout {
+                                id: silCol
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                Text { text: "Smart Silence Cut"; font.family: Theme.fontBody; font.pixelSize: 11; font.bold: true; color: Theme.textPrimary }
+                                Text { text: "Cuts silent segments and ripples audible audio together."; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
+                                StudioButton {
+                                    text: "Cut Silence (Ripple)"
+                                    variant: "primary"
+                                    Layout.fillWidth: true
+                                    enabled: selection.selectedClipId !== ""
+                                    onClicked: session.autoSilenceCut(selection.selectedClipId, -35.0, 0.4)
+                                }
+                            }
+                        }
+
+                        // Scene Split
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: 4
+                            color: Theme.bgCard
+                            border.color: Theme.borderMedium
+                            border.width: 1
+                            implicitHeight: scnCol.implicitHeight + 16
+
+                            ColumnLayout {
+                                id: scnCol
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                Text { text: "Scene Cut Splitter"; font.family: Theme.fontBody; font.pixelSize: 11; font.bold: true; color: Theme.textPrimary }
+                                Text { text: "Splits video clip at detected scene transitions."; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
+                                StudioButton {
+                                    text: "Split at Scene Cuts"
+                                    variant: "primary"
+                                    Layout.fillWidth: true
+                                    enabled: selection.selectedClipId !== ""
+                                    onClicked: session.autoSceneSplit(selection.selectedClipId, 0.25)
+                                }
+                            }
+                        }
+
+                        // Loudness Normalize
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: 4
+                            color: Theme.bgCard
+                            border.color: Theme.borderMedium
+                            border.width: 1
+                            implicitHeight: lufsCol.implicitHeight + 16
+
+                            ColumnLayout {
+                                id: lufsCol
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 8
+
+                                Text { text: "Loudness Normalization"; font.family: Theme.fontBody; font.pixelSize: 11; font.bold: true; color: Theme.textPrimary }
+                                Text { text: "Normalizes audio to -14 LUFS standard with peak limiting."; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+
+                                StudioButton {
+                                    text: "Normalize (-14 LUFS)"
+                                    variant: "primary"
+                                    Layout.fillWidth: true
+                                    enabled: selection.selectedClipId !== ""
+                                    onClicked: session.normalizeClipAudio(selection.selectedClipId, -14.0)
                                 }
                             }
                         }
                     }
                 }
             }
-        }
-    }
-
-    function applyCurrentEffect() {
-        if (effectList.currentIndex < 0 || selection.selectedClipId === "")
-            return
-        var item = effectList.model.get(effectList.currentIndex)
-        if (item.isPreset) {
-            if (item.typeName === "preset_warm") {
-                session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.15, 1.1, 0.3, 0.05)
-            } else if (item.typeName === "preset_cool") {
-                session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.15, 0.95, -0.3, -0.05)
-            } else if (item.typeName === "preset_bw") {
-                session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.2, 0.0, 0.0, 0.0)
-            } else if (item.typeName === "preset_vibrant") {
-                session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.2, 1.45, 0.05, 0.0)
-            }
-        } else {
-            session.addClipEffect(selection.selectedClipId, item.typeName)
         }
     }
 
     function addCurrent() {
-        if (mediaList.currentIndex < 0)
-            return
+        if (mediaList.currentIndex < 0) return
         var id = session.addClipToTimeline(library.assetIdAt(mediaList.currentIndex))
-        if (id !== "")
-            selection.select(id)
+        if (id !== "") selection.select(id)
     }
 
-    function applyCurrentTransition() {
-        if (transitionList.currentIndex < 0 || selection.selectedClipId === "")
-            return
-        var item = transitionList.model.get(transitionList.currentIndex)
-        var clipInfo = timeline.clipInfo(selection.selectedClipId)
-        if (!clipInfo || !clipInfo.trackId)
-            return
+    function applyFx() {
+        if (fxList.currentIndex < 0 || selection.selectedClipId === "") return
+        var item = fxList.model.get(fxList.currentIndex)
+        if (item.typeName === "preset_warm") session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.15, 1.1, 0.3, 0.05)
+        else if (item.typeName === "preset_cool") session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.15, 0.95, -0.3, -0.05)
+        else if (item.typeName === "preset_bw") session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.2, 0.0, 0.0, 0.0)
+        else if (item.typeName === "preset_vibrant") session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.2, 1.45, 0.05, 0.0)
+        else session.addClipEffect(selection.selectedClipId, item.typeName)
+    }
 
+    function applyTrans() {
+        if (transList.currentIndex < 0 || selection.selectedClipId === "") return
+        var item = transList.model.get(transList.currentIndex)
+        var clipInfo = timeline.clipInfo(selection.selectedClipId)
+        if (!clipInfo || !clipInfo.trackId) return
         var nextClip = timeline.adjacentClipId(selection.selectedClipId, true)
         var prevClip = timeline.adjacentClipId(selection.selectedClipId, false)
         var fromId = selection.selectedClipId
         var toId = nextClip
-        if (toId === "" && prevClip !== "") {
-            fromId = prevClip
-            toId = selection.selectedClipId
-        }
-
+        if (toId === "" && prevClip !== "") { fromId = prevClip; toId = selection.selectedClipId }
         var transId = session.addTransition(clipInfo.trackId, fromId, toId, item.typeName, 1.0, 0)
-        if (transId !== "") {
-            selection.selectTransition(transId)
-        }
+        if (transId !== "") selection.selectTransition(transId)
     }
 
     FileDialog {
@@ -753,8 +765,7 @@ Rectangle {
         fileMode: FileDialog.OpenFiles
         nameFilters: ["Media (*.mp4 *.mov *.mkv *.mp3 *.wav *.aac *.png *.jpg *.jpeg)", "All files (*)"]
         onAccepted: {
-            for (var i = 0; i < selectedFiles.length; ++i)
-                session.importMedia(selectedFiles[i])
+            for (var i = 0; i < selectedFiles.length; ++i) session.importMedia(selectedFiles[i])
         }
     }
 

@@ -6,12 +6,12 @@ import QtQuick.Dialogs
 ApplicationWindow {
     id: root
     visible: true
-    width: 1360
-    height: 860
+    width: 1400
+    height: 880
     minimumWidth: 1080
     minimumHeight: 680
     color: Theme.bgApp
-    title: (session.dirty ? "● " : "") + session.projectName + " — CatCup Studio 2026"
+    title: (session.dirty ? "● " : "") + session.projectName + " — CapCut"
 
     property double playhead: player.playing ? player.positionSec : selection.playheadSec
 
@@ -62,11 +62,11 @@ ApplicationWindow {
         }
     }
 
-    // ---- 2026 Studio Header & HUD Bar ----
+    // ---- CapCut Top Header Bar ----
     header: Rectangle {
-        id: studioHeader
-        height: 48
-        color: Theme.bgSurface
+        id: topBar
+        height: 44
+        color: Theme.bgSidebar
         border.color: Theme.borderSubtle
         border.width: 1
 
@@ -74,182 +74,250 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            spacing: 10
+            spacing: 12
 
-            // Brand Badge
-            Rectangle {
-                implicitWidth: 82
-                implicitHeight: 28
-                radius: 6
-                color: "#162822"
-                border.color: "#00E59966"
-                border.width: 1
-
-                Row {
-                    anchors.centerIn: parent
-                    spacing: 4
-                    Text {
-                        text: "CAT"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 12
-                        font.weight: Font.Black
-                        color: Theme.textPrimary
-                    }
-                    Text {
-                        text: "CUP"
-                        font.family: Theme.fontBody
-                        font.pixelSize: 12
-                        font.weight: Font.Black
-                        color: Theme.accent
-                    }
-                }
-            }
-
-            // Project Name & Status
+            // Left: CapCut Wordmark & Menu Pill
             Row {
-                spacing: 6
+                spacing: 8
+                anchors.verticalCenter: parent.verticalCenter
+
                 Text {
-                    text: session.projectName
+                    text: "CapCut"
                     font.family: Theme.fontBody
-                    font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.pixelSize: 14
+                    font.weight: Font.Bold
                     color: Theme.textPrimary
                     anchors.verticalCenter: parent.verticalCenter
                 }
-                Rectangle {
-                    width: 6
-                    height: 6
-                    radius: 3
-                    color: session.dirty ? Theme.orange : Theme.accent
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: session.dirty ? "Unsaved" : "Saved"
-                    font.family: Theme.fontBody
-                    font.pixelSize: 10
-                    color: session.dirty ? Theme.orange : Theme.textTertiary
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
 
-            // File & Edit Studio Menus
-            Row {
-                spacing: 2
-                StudioButton {
-                    text: "File"
-                    compact: true
-                    variant: "ghost"
-                    onClicked: fileMenu.open()
+                // Menu Pill
+                Rectangle {
+                    implicitWidth: 64
+                    implicitHeight: 24
+                    radius: 12
+                    color: menuMouse.containsMouse ? Theme.bgHover : Theme.bgElevated
+                    border.color: Theme.borderMedium
+                    border.width: 1
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text {
+                            text: "Menu"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            color: Theme.textPrimary
+                        }
+                        Text {
+                            text: "▾"
+                            font.pixelSize: 9
+                            color: Theme.textSecondary
+                        }
+                    }
+
+                    MouseArea {
+                        id: menuMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: appMenu.open()
+                    }
+
                     Menu {
-                        id: fileMenu
-                        y: parent.height + 2
+                        id: appMenu
+                        y: parent.height + 4
                         MenuItem { text: "New Project"; onTriggered: { session.newProject(); selection.clearSelection() } }
                         MenuItem { text: "Open Project… (Ctrl+O)"; onTriggered: openDialog.open() }
-                        MenuItem { text: "Save Project (Ctrl+S)"; onTriggered: session.save() }
-                        MenuItem { text: "Save Project As…"; onTriggered: saveDialog.open() }
+                        MenuItem { text: "Save (Ctrl+S)"; onTriggered: session.save() }
+                        MenuItem { text: "Save As…"; onTriggered: saveDialog.open() }
                         MenuSeparator {}
-                        MenuItem { text: "Export Video…"; onTriggered: exportDialog.open() }
+                        MenuItem { text: "Export…"; onTriggered: exportDialog.open() }
+                        MenuSeparator {}
+                        MenuItem { text: "Undo (Ctrl+Z)"; enabled: session.canUndo; onTriggered: session.undo() }
+                        MenuItem { text: "Redo (Ctrl+Y)"; enabled: session.canRedo; onTriggered: session.redo() }
                         MenuSeparator {}
                         MenuItem { text: "Quit"; onTriggered: Qt.quit() }
                     }
                 }
-                StudioButton {
-                    text: "Edit"
-                    compact: true
-                    variant: "ghost"
-                    onClicked: editMenu.open()
-                    Menu {
-                        id: editMenu
-                        y: parent.height + 2
-                        MenuItem { text: "Undo (Ctrl+Z)"; enabled: session.canUndo; onTriggered: session.undo() }
-                        MenuItem { text: "Redo (Ctrl+Y)"; enabled: session.canRedo; onTriggered: session.redo() }
-                        MenuSeparator {}
-                        MenuItem { text: "Split at Playhead (S)"; onTriggered: doSplit() }
-                        MenuItem { text: "Delete Selected"; onTriggered: doDelete() }
-                    }
-                }
             }
 
             Item { Layout.fillWidth: true }
 
-            // Center HUD: Glowing Timecode & Undo/Redo/Pills
-            RowLayout {
+            // Center: Project Name
+            Row {
                 spacing: 6
-
-                TimecodeDisplay {
-                    seconds: root.playhead
-                    totalSeconds: player.durationSec
-                }
-
-                StudioButton {
-                    iconText: "↶"
-                    compact: true
-                    variant: "ghost"
-                    enabled: session.canUndo
-                    onClicked: session.undo()
-                }
-
-                StudioButton {
-                    iconText: "↷"
-                    compact: true
-                    variant: "ghost"
-                    enabled: session.canRedo
-                    onClicked: session.redo()
-                }
-
-                Rectangle { width: 1; height: 16; color: Theme.borderMedium }
-
-                StudioButton {
-                    text: "SNAP"
-                    compact: true
-                    variant: session.snappingEnabled ? "accent" : "ghost"
-                    checked: session.snappingEnabled
-                    onClicked: session.snappingEnabled = !session.snappingEnabled
-                }
-
-                StudioButton {
-                    text: "RIPPLE"
-                    compact: true
-                    variant: session.rippleMode ? "accent" : "ghost"
-                    checked: session.rippleMode
-                    onClicked: session.rippleMode = !session.rippleMode
-                }
-            }
-
-            Item { Layout.fillWidth: true }
-
-            // Right: Format chip & Glowing Export Action
-            Rectangle {
-                implicitWidth: 86
-                implicitHeight: 24
-                radius: 12
-                color: Theme.bgElevated
-                border.color: Theme.borderSubtle
-                border.width: 1
+                anchors.centerIn: parent
 
                 Text {
-                    anchors.centerIn: parent
-                    text: "1080p · 30fps"
-                    font.family: Theme.fontMono
-                    font.pixelSize: 10
+                    text: session.projectName
+                    font.family: Theme.fontBody
+                    font.pixelSize: 12
                     color: Theme.textSecondary
+                }
+                Rectangle {
+                    visible: session.dirty
+                    width: 5
+                    height: 5
+                    radius: 2.5
+                    color: Theme.warning
+                    anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
-            StudioButton {
-                text: "Export"
-                iconText: "⇪"
-                variant: "primary"
-                onClicked: exportDialog.open()
+            Item { Layout.fillWidth: true }
+
+            // Right: Shortcuts / Pro / Share / Export Pill Button
+            RowLayout {
+                spacing: 8
+                anchors.verticalCenter: parent.verticalCenter
+
+                // Pro badge
+                Rectangle {
+                    implicitWidth: 48
+                    implicitHeight: 22
+                    radius: 11
+                    color: "#2C2038"
+                    border.color: "#8B5CF6"
+                    border.width: 1
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 3
+                        Text { text: "✦"; font.pixelSize: 10; color: "#C084FC" }
+                        Text { text: "Pro"; font.family: Theme.fontBody; font.pixelSize: 10; font.bold: true; color: "#C084FC" }
+                    }
+
+                }
+
+                // Share button
+                Rectangle {
+                    implicitWidth: 60
+                    implicitHeight: 24
+                    radius: 4
+                    color: shareMouse.containsMouse ? Theme.bgHover : Theme.bgElevated
+                    border.color: Theme.borderMedium
+                    border.width: 1
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 4
+                        Text { text: "↗"; font.pixelSize: 10; color: Theme.textPrimary }
+                        Text { text: "Share"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textPrimary }
+                    }
+
+                    MouseArea {
+                        id: shareMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                    }
+                }
+
+                // Primary Cyan-Teal Export Pill
+                Rectangle {
+                    implicitWidth: 84
+                    implicitHeight: 26
+                    radius: 13
+                    color: exportMouse.pressed ? Theme.accentPressed : (exportMouse.containsMouse ? Theme.accentHover : Theme.accent)
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 5
+                        Text {
+                            text: "⇪"
+                            font.pixelSize: 12
+                            font.bold: true
+                            color: "#000000"
+                        }
+                        Text {
+                            text: "Export"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            color: "#000000"
+                        }
+                    }
+
+                    MouseArea {
+                        id: exportMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: exportDialog.open()
+                    }
+                }
             }
         }
     }
 
-    // ---- Minimal Status Footer ----
+    // ---- Workspace Panels (Adaptive Resizing) ----
+    SplitView {
+        anchors.fill: parent
+        orientation: Qt.Vertical
+
+        handle: Rectangle {
+            id: vHandle
+            implicitHeight: 6
+            color: SplitHandle.pressed ? Theme.accent : (SplitHandle.hovered ? Theme.accentHover : Theme.bgApp)
+
+            Rectangle {
+                anchors.centerIn: parent
+                height: 1
+                width: parent.width
+                color: Theme.borderMedium
+            }
+        }
+
+        SplitView {
+            SplitView.fillHeight: true
+            SplitView.preferredHeight: 520
+            orientation: Qt.Horizontal
+
+            handle: Rectangle {
+                id: hHandle
+                implicitWidth: 6
+                color: SplitHandle.pressed ? Theme.accent : (SplitHandle.hovered ? Theme.accentHover : Theme.bgApp)
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: 1
+                    height: parent.height
+                    color: Theme.borderMedium
+                }
+            }
+
+
+            MediaBrowser {
+                SplitView.preferredWidth: 320
+                SplitView.minimumWidth: 260
+            }
+
+            PreviewView {
+                id: previewView
+                SplitView.fillWidth: true
+                SplitView.minimumWidth: 380
+                playheadSec: root.playhead
+            }
+
+            Inspector {
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 240
+            }
+        }
+
+        TimelineView {
+            SplitView.preferredHeight: 280
+            SplitView.minimumHeight: 180
+            playheadSec: root.playhead
+        }
+    }
+
+    // Minimal status bar footer
     footer: Rectangle {
         id: footerBar
-        height: 26
-        color: Theme.bgSurface
+        height: 22
+        color: Theme.bgSidebar
         border.color: Theme.borderSubtle
         border.width: 1
 
@@ -264,9 +332,9 @@ ApplicationWindow {
             anchors.rightMargin: 12
 
             Text {
-                text: "Space: Play/Pause  ·  S: Split  ·  Del: Delete  ·  Scroll: Zoom Timeline"
+                text: "Space: Play/Pause  ·  S: Split  ·  Del: Delete  ·  Scroll: Zoom"
                 font.family: Theme.fontBody
-                font.pixelSize: 11
+                font.pixelSize: 10
                 color: Theme.textTertiary
                 Layout.fillWidth: true
             }
@@ -274,9 +342,9 @@ ApplicationWindow {
             Text {
                 id: errorLabel
                 font.family: Theme.fontBody
-                font.pixelSize: 11
+                font.pixelSize: 10
                 font.weight: Font.DemiBold
-                color: Theme.red
+                color: Theme.danger
             }
 
             Timer {
@@ -287,68 +355,9 @@ ApplicationWindow {
         }
     }
 
-    // ---- Workspace Split Panels ----
-    SplitView {
-        anchors.fill: parent
-        orientation: Qt.Vertical
-
-        handle: Rectangle {
-            implicitHeight: 3
-            color: Theme.bgApp
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: 1
-                color: SplitHandle.hovered ? Theme.accent : Theme.borderSubtle
-            }
-        }
-
-        SplitView {
-            SplitView.fillHeight: true
-            SplitView.preferredHeight: 530
-            orientation: Qt.Horizontal
-
-            handle: Rectangle {
-                implicitWidth: 3
-                color: Theme.bgApp
-                Rectangle {
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: 1
-                    color: SplitHandle.hovered ? Theme.accent : Theme.borderSubtle
-                }
-            }
-
-            MediaBrowser {
-                SplitView.preferredWidth: 300
-                SplitView.minimumWidth: 240
-            }
-
-            PreviewView {
-                id: previewView
-                SplitView.fillWidth: true
-                SplitView.minimumWidth: 360
-                playheadSec: root.playhead
-            }
-
-            Inspector {
-                SplitView.preferredWidth: 320
-                SplitView.minimumWidth: 260
-            }
-        }
-
-        TimelineView {
-            SplitView.preferredHeight: 260
-            SplitView.minimumHeight: 160
-            playheadSec: root.playhead
-        }
-    }
-
     FileDialog {
         id: openDialog
-        title: "Open project"
+        title: "Open Project"
         fileMode: FileDialog.OpenFile
         nameFilters: ["Project (*.json)", "All files (*)"]
         onAccepted: {
@@ -361,7 +370,7 @@ ApplicationWindow {
 
     FileDialog {
         id: saveDialog
-        title: "Save project as"
+        title: "Save Project As"
         fileMode: FileDialog.SaveFile
         nameFilters: ["Project (*.json)"]
         onAccepted: session.saveAs(selectedFile)

@@ -55,6 +55,7 @@ public:
     Q_INVOKABLE bool splitSelectedAtPlayhead(const QString& clipId, double playheadSec);
     Q_INVOKABLE bool deleteClip(const QString& clipId);
     Q_INVOKABLE bool moveClipTo(const QString& clipId, double newStartSec);
+    Q_INVOKABLE bool moveClipToTrack(const QString& clipId, const QString& newTrackId, double newStartSec);
     Q_INVOKABLE bool trimClip(const QString& clipId, double newInSec, double newOutSec,
                               double newStartSec);
     Q_INVOKABLE bool setClipTransform(const QString& clipId, double scale, double x,
@@ -88,6 +89,17 @@ public:
     Q_INVOKABLE bool importSubtitlesFile(const QUrl& url);
     Q_INVOKABLE QString exportSubtitles() const;
     Q_INVOKABLE bool exportSubtitlesFile(const QUrl& url) const;
+    Q_INVOKABLE bool setClipKeyframe(const QString& clipId, double seqTimeSec,
+                                     double scale, double x, double y,
+                                     double rotationDeg, double opacity,
+                                     const QString& easing = "linear");
+    Q_INVOKABLE bool removeClipKeyframe(const QString& clipId, double seqTimeSec);
+    Q_INVOKABLE bool setClipFade(const QString& clipId, double fadeInSec, double fadeOutSec);
+    Q_INVOKABLE bool setSequenceFormat(int width, int height);
+    Q_INVOKABLE bool setSequenceAspectPreset(const QString& preset);
+    Q_INVOKABLE QString getSequenceAspectPreset() const;
+    Q_INVOKABLE bool normalizeClipAudio(const QString& clipId, double targetLufs = -14.0);
+    Q_INVOKABLE bool denoiseClipAudio(const QString& clipId, double rumbleCutoffHz = 80.0);
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
 

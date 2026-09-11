@@ -17,6 +17,7 @@ editor_test(test_commands test_commands.cpp)
 editor_test(test_evaluator test_evaluator.cpp)
 editor_test(test_effects test_effects.cpp)
 editor_test(test_smart_tools test_smart_tools.cpp)
+editor_test(test_stage5_engine test_stage5_engine.cpp)
 editor_test(test_export_job test_export_job.cpp)
 editor_test(test_jobs test_jobs.cpp)
 

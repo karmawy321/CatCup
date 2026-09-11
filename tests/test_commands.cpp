@@ -370,6 +370,41 @@ TEST_CASE("commands: set clip speed with and without ripple") {
     CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(2, 1));
 }
 
+TEST_CASE("commands: move clip to track with undo/redo") {
+    core::Project p = makeProject();
+    core::Track t2;
+    t2.id = "track-2";
+    t2.kind = core::TrackKind::Video;
+    t2.name = "V2";
+    p.sequences.front().tracks.push_back(t2);
+
+    commands::UndoStack undo(10);
+    std::string error;
+    core::Clip c = makeClip("c1");
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c), p, error));
+    CHECK_EQ(p.sequences.front().tracks[0].clipIds.size(), 1u);
+    CHECK_EQ(p.sequences.front().tracks[1].clipIds.size(), 0u);
+
+    // Move to track-2 at 3.5s
+    CHECK(undo.execute(commands::makeMoveClipToTrackCommand("c1", "track-2", core::Rational(7, 2)), p, error));
+    CHECK_EQ(p.sequences.front().tracks[0].clipIds.size(), 0u);
+    CHECK_EQ(p.sequences.front().tracks[1].clipIds.size(), 1u);
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqStart, core::Rational(7, 2));
+
+    // Undo: back to track-1 at 0s
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().tracks[0].clipIds.size(), 1u);
+    CHECK_EQ(p.sequences.front().tracks[1].clipIds.size(), 0u);
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqStart, core::Rational(0));
+
+    // Redo: to track-2 at 3.5s
+    CHECK(undo.redo(p, error));
+    CHECK_EQ(p.sequences.front().tracks[0].clipIds.size(), 0u);
+    CHECK_EQ(p.sequences.front().tracks[1].clipIds.size(), 1u);
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqStart, core::Rational(7, 2));
+}
+
 int main() {
     return editor::tests::runAll();
 }
+

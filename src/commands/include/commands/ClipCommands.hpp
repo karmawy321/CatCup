@@ -30,4 +30,16 @@ std::unique_ptr<ICommand> makeRippleTrimClipCommand(const core::Id& clipId, core
 /// Set clip opacity in [0.0, 1.0].
 std::unique_ptr<ICommand> makeSetOpacityCommand(const core::Id& clipId, double opacity);
 
+/// Set or update a keyframe on clipId.
+std::unique_ptr<ICommand> makeSetKeyframeCommand(const core::Id& clipId, core::Keyframe kf);
+/// Remove a keyframe at seqTime on clipId.
+std::unique_ptr<ICommand> makeRemoveKeyframeCommand(const core::Id& clipId, core::Rational seqTime);
+/// Set fade-in and fade-out durations on clipId.
+std::unique_ptr<ICommand> makeSetFadeCommand(const core::Id& clipId, double fadeInSec, double fadeOutSec);
+/// Set active sequence canvas resolution.
+std::unique_ptr<ICommand> makeSetSequenceFormatCommand(std::int64_t width, std::int64_t height);
+/// Move clip to a different track and new sequence start time.
+std::unique_ptr<ICommand> makeMoveClipToTrackCommand(const core::Id& clipId, const core::Id& newTrackId, core::Rational newStart);
+
 } // namespace editor::commands
+

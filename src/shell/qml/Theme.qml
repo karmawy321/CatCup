@@ -4,56 +4,59 @@ import QtQuick
 QtObject {
     id: root
 
-    // ---- 2026 Obsidian Studio Color System ----
-    readonly property color bgApp: "#090A0D"           // Ultra-deep root background
-    readonly property color bgSidebar: "#0E1015"       // Side panels (Media Browser / Inspector)
-    readonly property color bgSurface: "#13161F"       // Cards, headers, toolbar surfaces
-    readonly property color bgElevated: "#1A1E2A"      // Elevated buttons, inputs, tabs
-    readonly property color bgCard: "#161922"          // Inner cards, list item delegates
-    readonly property color bgHover: "#232838"         // Hover state
-    readonly property color bgActive: "#2C3347"        // Pressed/Active state
-    readonly property color bgCanvas: "#050608"        // Cinema preview letterbox backing
+    // ---- Exact CapCut Desktop Color System (Sampled from native UI) ----
+    // Base Canvas & Surfaces
+    readonly property color bgApp: "#16161A"           // Root window & timeline background
+    readonly property color bgSidebar: "#1E1E22"       // Media browser & details panel
+    readonly property color bgSubSidebar: "#18181C"    // Leftmost navigation sub-rail
+    readonly property color bgSurface: "#202024"       // Panel headers & floating bars
+    readonly property color bgCard: "#121214"          // Media card & delegate background
+    readonly property color bgElevated: "#28282E"      // Buttons, inputs, search box
+    readonly property color bgHover: "#32323A"         // Button / delegate hover
+    readonly property color bgActive: "#3C3C46"        // Active / pressed
+    readonly property color bgCanvas: "#0D0D10"        // Player monitor backing
 
-    // Precision Borders & Lines
-    readonly property color borderSubtle: "#1B202D"    // Low-contrast separators
-    readonly property color borderMedium: "#262C3E"    // Inputs, cards, panels
-    readonly property color borderHighlight: "#363F58" // Subtle light reflections
-    readonly property color borderFocus: "#00E599"     // Active/Focused border
+    // Borders & Hairlines
+    readonly property color borderSubtle: "#26262C"    // Inactive dividers
+    readonly property color borderMedium: "#303038"    // Card borders, button outlines
+    readonly property color borderHighlight: "#42424E" // Hovered element borders
+    readonly property color borderFocus: "#00C7D4"     // Focused / selected border
 
-    // 2026 Neon Accents (CapCut / Cyberpunk Studio Aesthetic)
-    readonly property color accent: "#00E599"          // Neon Emerald / Jade
-    readonly property color accentHover: "#1AE8A3"
-    readonly property color accentPressed: "#00C282"
-    readonly property color accentGlow: "#2000E599"     // Subtle translucent glow
+    // Signature CapCut Cyan-Teal Brand Accent
+    readonly property color accent: "#00C7D4"          // Primary cyan-teal
+    readonly property color accentHover: "#1ED6E2"
+    readonly property color accentPressed: "#00B0BC"
+    readonly property color accentGlow: "#3300C7D4"
+    readonly property color accentBadge: "#163E48"
 
-    readonly property color cyan: "#00C8FF"            // Electric Cyan (Playhead / Selection)
-    readonly property color cyanGlow: "#4000C8FF"
-    readonly property color purple: "#A855F7"          // Caption / Text track accent
-    readonly property color orange: "#FB923C"          // Warning / Transition accent
-    readonly property color red: "#FF4D4F"             // Delete / Error accent
-    readonly property color blue: "#38BDF8"            // Info / Cut badge
+    // Functional State Colors
+    readonly property color danger: "#EF4444"
+    readonly property color dangerBg: "#4A1E20"
+    readonly property color warning: "#F59E0B"
+    readonly property color success: "#10B981"
 
-    // Track Specific Palette
-    readonly property color trackVideo: "#0E3E43"      // Video clips primary
-    readonly property color trackVideoGrad: "#175B62"
-    readonly property color trackAudio: "#1A472A"      // Audio clips primary
-    readonly property color trackAudioGrad: "#26693E"
-    readonly property color trackText: "#3E2368"       // Subtitle/Text clips primary
-    readonly property color trackTextGrad: "#583294"
+    // CapCut Timeline Clip Colors (Exact from Screenshot)
+    readonly property color clipVideo: "#1C4049"       // Slate cyan-teal video block
+    readonly property color clipVideoBorder: "#2A5A66"
+    readonly property color clipAudio: "#1E3A2F"       // Spruce green audio block
+    readonly property color clipAudioBorder: "#2C5243"
+    readonly property color clipText: "#3A2A48"        // Subtle plum text block
+    readonly property color clipTextBorder: "#523C66"
+    readonly property color clipWarning: "#5C2424"     // Speed / warning block
 
     // Typography
-    readonly property color textPrimary: "#F9FAFB"     // Crisp White
-    readonly property color textSecondary: "#9CA3AF"   // Muted Silver
-    readonly property color textTertiary: "#6B7280"    // Dark Muted
-    readonly property color textDisabled: "#4B5563"
-    readonly property color textAccent: "#00E599"
+    readonly property color textPrimary: "#FFFFFF"     // Crisp white
+    readonly property color textSecondary: "#A0A0A8"   // Muted silver
+    readonly property color textTertiary: "#666670"    // Dark muted
+    readonly property color textDisabled: "#44444C"
+    readonly property color textAccent: "#00C7D4"
 
     readonly property string fontMono: "Consolas, 'Cascadia Code', 'JetBrains Mono', monospace"
     readonly property string fontBody: "Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
 
-    // Metrics & Radii
-    readonly property int radiusSmall: 4
-    readonly property int radiusMedium: 6
-    readonly property int radiusLarge: 10
+    // Radii
+    readonly property int radiusSmall: 3
+    readonly property int radiusMedium: 5
+    readonly property int radiusLarge: 8
     readonly property int radiusPill: 999
 }

@@ -3,21 +3,26 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Dialogs
 
-// 2026 Studio Export Modal Dialog: Output summary, destination picker,
-// animated progress indicator, status, cancel, and start actions.
+// CapCut Desktop 1:1 Export Modal:
+// - Clean matte dark zinc panel (#1E1E22)
+// - Preset resolution pills (1080p, 720p, 4K)
+// - Codec & format controls (H.264 MP4)
+// - Destination path picker
+// - Progress bar in signature cyan-teal (#00C7D4)
+// - Cyan Export action button
 
 Dialog {
     id: root
     title: ""
     modal: true
     standardButtons: Dialog.NoButton
-    width: 500
-    height: 360
+    width: 520
+    height: 420
     x: parent ? (parent.width - width) / 2 : 0
     y: parent ? (parent.height - height) / 2 : 0
 
     background: Rectangle {
-        radius: Theme.radiusLarge
+        radius: 10
         color: Theme.bgSurface
         border.color: Theme.borderHighlight
         border.width: 1
@@ -33,44 +38,86 @@ Dialog {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
+        anchors.margins: 18
         spacing: 12
 
-        // Modal Header
+        // Header: "Export" and close button
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
+
+            Text {
+                text: "Export"
+                font.family: Theme.fontBody
+                font.pixelSize: 15
+                font.bold: true
+                color: Theme.textPrimary
+                Layout.fillWidth: true
+            }
 
             Rectangle {
-                implicitWidth: 32
-                implicitHeight: 32
-                radius: 8
-                color: "#162822"
-                border.color: "#00E59966"
-                border.width: 1
+                implicitWidth: 24
+                implicitHeight: 24
+                radius: 4
+                color: closeMa.containsMouse ? Theme.bgHover : "transparent"
 
                 Text {
                     anchors.centerIn: parent
-                    text: "⇪"
+                    text: "×"
                     font.pixelSize: 16
-                    color: Theme.accent
+                    color: Theme.textSecondary
+                }
+
+                MouseArea {
+                    id: closeMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.close()
                 }
             }
+        }
 
-            ColumnLayout {
-                spacing: 1
-                Text {
-                    text: "Export Master Video"
-                    font.family: Theme.fontBody
-                    font.pixelSize: 14
-                    font.bold: true
-                    color: Theme.textPrimary
-                }
-                Text {
-                    text: "H.264 / AAC MP4 Render Pipeline"
-                    font.family: Theme.fontBody
-                    font.pixelSize: 10
-                    color: Theme.textTertiary
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: Theme.borderSubtle
+        }
+
+        // Resolution Presets Pills
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 6
+
+            Text {
+                text: "Resolution"
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                color: Theme.textSecondary
+            }
+
+            RowLayout {
+                spacing: 8
+
+                Repeater {
+                    model: ["1080p (Full HD)", "720p (HD)", "4K (UHD)"]
+                    delegate: Rectangle {
+                        implicitWidth: resPillText.implicitWidth + 20
+                        implicitHeight: 28
+                        radius: 14
+                        color: index === 0 ? Theme.accent : Theme.bgElevated
+                        border.color: index === 0 ? Theme.accent : Theme.borderMedium
+                        border.width: 1
+
+                        Text {
+                            id: resPillText
+                            anchors.centerIn: parent
+                            text: modelData
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            font.weight: index === 0 ? Font.DemiBold : Font.Normal
+                            color: index === 0 ? "#000000" : Theme.textPrimary
+                        }
+                    }
                 }
             }
         }
@@ -78,7 +125,7 @@ Dialog {
         // Summary Card
         Rectangle {
             Layout.fillWidth: true
-            radius: Theme.radiusMedium
+            radius: 6
             color: Theme.bgCard
             border.color: Theme.borderMedium
             border.width: 1
@@ -97,47 +144,52 @@ Dialog {
         }
 
         // Destination Path Picker
-        Text {
-            text: "Destination Path"
-            font.family: Theme.fontBody
-            font.pixelSize: 11
-            color: Theme.textSecondary
-        }
-
-        RowLayout {
+        ColumnLayout {
             Layout.fillWidth: true
-            spacing: 6
+            spacing: 4
 
-            Rectangle {
+            Text {
+                text: "Export To"
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                color: Theme.textSecondary
+            }
+
+            RowLayout {
                 Layout.fillWidth: true
-                height: 32
-                radius: Theme.radiusSmall
-                color: Theme.bgElevated
-                border.color: pathInput.activeFocus ? Theme.borderFocus : Theme.borderMedium
-                border.width: 1
+                spacing: 6
 
-                TextInput {
-                    id: pathInput
-                    anchors.fill: parent
-                    anchors.margins: 6
-                    font.family: Theme.fontMono
-                    font.pixelSize: 11
-                    color: Theme.textPrimary
-                    selectByMouse: true
-                    text: exporter.outputPath
-                    onEditingFinished: exporter.setOutputPath(text)
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 32
+                    radius: 4
+                    color: Theme.bgElevated
+                    border.color: pathInput.activeFocus ? Theme.borderFocus : Theme.borderMedium
+                    border.width: 1
+
+                    TextInput {
+                        id: pathInput
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        font.family: Theme.fontMono
+                        font.pixelSize: 11
+                        color: Theme.textPrimary
+                        selectByMouse: true
+                        text: exporter.outputPath
+                        onEditingFinished: exporter.setOutputPath(text)
+                    }
+                }
+
+                StudioButton {
+                    text: "Browse…"
+                    compact: true
+                    variant: "secondary"
+                    onClicked: saveDialog.open()
                 }
             }
-
-            StudioButton {
-                text: "Browse…"
-                compact: true
-                variant: "secondary"
-                onClicked: saveDialog.open()
-            }
         }
 
-        // Animated Progress Bar
+        // Animated Progress Bar (Encoding)
         ColumnLayout {
             Layout.fillWidth: true
             visible: exporter.state === 1
@@ -146,7 +198,7 @@ Dialog {
             RowLayout {
                 Layout.fillWidth: true
                 Text {
-                    text: "Encoding Video Frames…"
+                    text: "Rendering & Encoding MP4 Video…"
                     font.family: Theme.fontBody
                     font.pixelSize: 11
                     color: Theme.textSecondary
@@ -185,7 +237,7 @@ Dialog {
             font.family: Theme.fontBody
             font.pixelSize: 11
             font.bold: true
-            color: Theme.red
+            color: Theme.danger
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
         }
@@ -195,8 +247,8 @@ Dialog {
             visible: exporter.state === 2
             Layout.fillWidth: true
             height: 36
-            radius: Theme.radiusSmall
-            color: "#14281E"
+            radius: 6
+            color: "#16342E"
             border.color: Theme.accent
             border.width: 1
 
@@ -225,20 +277,47 @@ Dialog {
             spacing: 8
 
             StudioButton {
-                text: "Close"
+                text: "Cancel"
                 variant: "ghost"
                 onClicked: root.close()
             }
 
-            StudioButton {
-                text: exporter.state === 1 ? "Cancel Export" : "Start Export"
-                iconText: exporter.state === 1 ? "◼" : "⇪"
-                variant: exporter.state === 1 ? "danger" : "primary"
-                onClicked: {
-                    if (exporter.state === 1)
-                        exporter.cancelExport()
-                    else
-                        exporter.startExport()
+            // CapCut Cyan Export Pill Button
+            Rectangle {
+                implicitWidth: 100
+                implicitHeight: 32
+                radius: 16
+                color: exporter.state === 1 ? "#DC2626" : (expMa.pressed ? Theme.accentPressed : (expMa.containsMouse ? Theme.accentHover : Theme.accent))
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 5
+                    Text {
+                        text: exporter.state === 1 ? "◼" : "⇪"
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: exporter.state === 1 ? "#FFFFFF" : "#000000"
+                    }
+                    Text {
+                        text: exporter.state === 1 ? "Cancel" : "Export"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: exporter.state === 1 ? "#FFFFFF" : "#000000"
+                    }
+                }
+
+                MouseArea {
+                    id: expMa
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (exporter.state === 1)
+                            exporter.cancelExport()
+                        else
+                            exporter.startExport()
+                    }
                 }
             }
         }

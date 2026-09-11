@@ -136,6 +136,19 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
                           {"x", JsonValue(c.transform.x)},
                           {"y", JsonValue(c.transform.y)},
                           {"rotationDeg", JsonValue(c.transform.rotationDeg)}};
+            JsonArray keyframes;
+            for (const auto& kf : c.keyframes) {
+                JsonObject trKf{{"scale", JsonValue(kf.transform.scale)},
+                                {"x", JsonValue(kf.transform.x)},
+                                {"y", JsonValue(kf.transform.y)},
+                                {"rotationDeg", JsonValue(kf.transform.rotationDeg)}};
+                keyframes.push_back(JsonValue(JsonObject{
+                    {"seqTime", rationalToJson(kf.seqTime)},
+                    {"transform", JsonValue(std::move(trKf))},
+                    {"opacity", JsonValue(kf.opacity)},
+                    {"easing", JsonValue(kf.easing)},
+                }));
+            }
             clips.push_back(JsonValue(JsonObject{
                 {"id", JsonValue(c.id)},
                 {"assetId", JsonValue(c.assetId)},
@@ -148,6 +161,9 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
                 {"speed", rationalToJson(c.speed)},
                 {"transform", JsonValue(std::move(tr))},
                 {"effects", JsonValue(std::move(effects))},
+                {"keyframes", JsonValue(std::move(keyframes))},
+                {"fadeInSec", JsonValue(c.fadeInSec)},
+                {"fadeOutSec", JsonValue(c.fadeOutSec)},
                 {"text", JsonValue(c.text)},
                 {"fontFamily", JsonValue(c.fontFamily)},
                 {"fontSizePt", JsonValue(c.fontSizePt)},
@@ -439,6 +455,46 @@ core::Result<core::Project> projectFromJson(const JsonValue& root) {
                                 return core::Result<core::Project>::fail(e.error());
                             }
                             c.effects.push_back(std::move(e.value()));
+                        }
+                    }
+                    if (const auto f2 = co->find("fadeInSec"); f2 != co->end() && (f2->second.isDouble() || f2->second.isInt())) {
+                        c.fadeInSec = f2->second.isDouble() ? f2->second.asDouble() : static_cast<double>(f2->second.asInt());
+                    }
+                    if (const auto f2 = co->find("fadeOutSec"); f2 != co->end() && (f2->second.isDouble() || f2->second.isInt())) {
+                        c.fadeOutSec = f2->second.isDouble() ? f2->second.asDouble() : static_cast<double>(f2->second.asInt());
+                    }
+                    if (const auto f2 = co->find("keyframes"); f2 != co->end() && f2->second.isArray()) {
+                        for (const auto& kfv : f2->second.asArray()) {
+                            if (kfv.isObject()) {
+                                const auto& kfo = kfv.asObject();
+                                core::Keyframe kf;
+                                if (const auto st = kfo.find("seqTime"); st != kfo.end()) {
+                                    auto r = rationalFromJson(st->second, "keyframe.seqTime");
+                                    if (r.isOk()) kf.seqTime = r.value();
+                                }
+                                if (const auto op = kfo.find("opacity"); op != kfo.end() && (op->second.isDouble() || op->second.isInt())) {
+                                    kf.opacity = op->second.isDouble() ? op->second.asDouble() : static_cast<double>(op->second.asInt());
+                                }
+                                if (const auto es = kfo.find("easing"); es != kfo.end() && es->second.isString()) {
+                                    kf.easing = es->second.asString();
+                                }
+                                if (const auto tr = kfo.find("transform"); tr != kfo.end() && tr->second.isObject()) {
+                                    const auto& tro = tr->second.asObject();
+                                    if (const auto p = tro.find("scale"); p != tro.end() && (p->second.isDouble() || p->second.isInt())) {
+                                        kf.transform.scale = p->second.isDouble() ? p->second.asDouble() : static_cast<double>(p->second.asInt());
+                                    }
+                                    if (const auto p = tro.find("x"); p != tro.end() && (p->second.isDouble() || p->second.isInt())) {
+                                        kf.transform.x = p->second.isDouble() ? p->second.asDouble() : static_cast<double>(p->second.asInt());
+                                    }
+                                    if (const auto p = tro.find("y"); p != tro.end() && (p->second.isDouble() || p->second.isInt())) {
+                                        kf.transform.y = p->second.isDouble() ? p->second.asDouble() : static_cast<double>(p->second.asInt());
+                                    }
+                                    if (const auto p = tro.find("rotationDeg"); p != tro.end() && (p->second.isDouble() || p->second.isInt())) {
+                                        kf.transform.rotationDeg = p->second.isDouble() ? p->second.asDouble() : static_cast<double>(p->second.asInt());
+                                    }
+                                }
+                                c.keyframes.push_back(std::move(kf));
+                            }
                         }
                     }
                     if (const auto f2 = co->find("text"); f2 != co->end() && f2->second.isString()) {

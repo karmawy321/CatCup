@@ -71,9 +71,10 @@ target_link_libraries(editor-ui
 )
 
 if(MSVC)
-    target_compile_options(editor-ui PRIVATE /W4 /WX)
+    target_compile_options(editor-ui PRIVATE /W4 /WX /wd4702)
     target_compile_options(editor-ui PRIVATE /experimental:external /external:W0)
 endif()
+
 
 ffmpeg_copy_runtime_dlls(editor-ui)
 
