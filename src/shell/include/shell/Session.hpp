@@ -80,6 +80,14 @@ public:
     Q_INVOKABLE bool updateTransition(const QString& transitionId, double durationSec,
                                       int alignment, const QString& type,
                                       const QString& easing = "linear");
+    Q_INVOKABLE bool autoSilenceCut(const QString& clipId, double thresholdDb = -35.0,
+                                    double minDurationSec = 0.4);
+    Q_INVOKABLE bool autoSceneSplit(const QString& clipId, double threshold = 0.25);
+    Q_INVOKABLE bool generateAutoCaptions(const QString& transcript, int wordsPerCue = 4);
+    Q_INVOKABLE bool importSubtitles(const QString& srtContent);
+    Q_INVOKABLE bool importSubtitlesFile(const QUrl& url);
+    Q_INVOKABLE QString exportSubtitles() const;
+    Q_INVOKABLE bool exportSubtitlesFile(const QUrl& url) const;
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
 

@@ -1,5 +1,8 @@
 add_library(ai STATIC
     src/JobSystem.cpp
+    src/AudioAnalysis.cpp
+    src/SceneDetection.cpp
+    src/CaptionEngine.cpp
 )
 
 target_include_directories(ai PUBLIC include)

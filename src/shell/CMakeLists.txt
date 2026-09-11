@@ -35,6 +35,11 @@ qt_add_qml_module(editor-ui
     URI NativeEditor
     VERSION 1.0
     QML_FILES
+        qml/Theme.qml
+        qml/StudioButton.qml
+        qml/StudioSlider.qml
+        qml/StudioCard.qml
+        qml/TimecodeDisplay.qml
         qml/Main.qml
         qml/MediaBrowser.qml
         qml/PreviewView.qml

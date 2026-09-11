@@ -6,11 +6,12 @@ import QtQuick.Dialogs
 ApplicationWindow {
     id: root
     visible: true
-    width: 1280
-    height: 800
-    minimumWidth: 1024
-    minimumHeight: 640
-    title: (session.dirty ? "● " : "") + session.projectName + " — native_editor"
+    width: 1360
+    height: 860
+    minimumWidth: 1080
+    minimumHeight: 680
+    color: Theme.bgApp
+    title: (session.dirty ? "● " : "") + session.projectName + " — CatCup Studio 2026"
 
     property double playhead: player.playing ? player.positionSec : selection.playheadSec
 
@@ -43,7 +44,9 @@ ApplicationWindow {
     Shortcut { sequences: [StandardKey.Undo]; onActivated: session.undo() }
     Shortcut { sequences: [StandardKey.Redo]; onActivated: session.redo() }
     Shortcut { sequence: "Ctrl+S"; onActivated: session.save() }
+    Shortcut { sequence: "Ctrl+O"; onActivated: openDialog.open() }
     Shortcut { sequence: "S"; onActivated: doSplit() }
+    Shortcut { sequence: "Delete"; onActivated: doDelete() }
 
     function doSplit() {
         if (selection.selectedClipId !== "")
@@ -59,92 +62,286 @@ ApplicationWindow {
         }
     }
 
-    menuBar: MenuBar {
-        Menu {
-            title: "File"
-            Action { text: "New"; onTriggered: { session.newProject(); selection.clearSelection() } }
-            Action { text: "Open…"; onTriggered: openDialog.open() }
-            Action { text: "Save"; onTriggered: session.save() }
-            Action { text: "Save As…"; onTriggered: saveDialog.open() }
-            MenuSeparator {}
-            Action { text: "Export…"; onTriggered: exportDialog.open() }
-            MenuSeparator {}
-            Action { text: "Quit"; onTriggered: Qt.quit() }
-        }
-        Menu {
-            title: "Edit"
-            Action { text: "Undo"; enabled: session.canUndo; onTriggered: session.undo() }
-            Action { text: "Redo"; enabled: session.canRedo; onTriggered: session.redo() }
-            MenuSeparator {}
-            Action { text: "Split at playhead (S)"; onTriggered: doSplit() }
-            Action { text: "Delete selection"; onTriggered: doDelete() }
-        }
-    }
+    // ---- 2026 Studio Header & HUD Bar ----
+    header: Rectangle {
+        id: studioHeader
+        height: 48
+        color: Theme.bgSurface
+        border.color: Theme.borderSubtle
+        border.width: 1
 
-    header: ToolBar {
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 12
             anchors.rightMargin: 12
-            Label { text: session.projectName; font.bold: true; Layout.fillWidth: true }
-            Label {
-                text: session.dirty ? "unsaved changes" : "saved"
-                color: session.dirty ? "#e0a75f" : "#7fbf7f"
+            spacing: 10
+
+            // Brand Badge
+            Rectangle {
+                implicitWidth: 82
+                implicitHeight: 28
+                radius: 6
+                color: "#162822"
+                border.color: "#00E59966"
+                border.width: 1
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: 4
+                    Text {
+                        text: "CAT"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 12
+                        font.weight: Font.Black
+                        color: Theme.textPrimary
+                    }
+                    Text {
+                        text: "CUP"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 12
+                        font.weight: Font.Black
+                        color: Theme.accent
+                    }
+                }
             }
-            ToolButton { text: "Undo"; enabled: session.canUndo; onClicked: session.undo() }
-            ToolButton { text: "Redo"; enabled: session.canRedo; onClicked: session.redo() }
-            Button {
-                text: "Export…"
-                highlighted: true
+
+            // Project Name & Status
+            Row {
+                spacing: 6
+                Text {
+                    text: session.projectName
+                    font.family: Theme.fontBody
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    color: Theme.textPrimary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Rectangle {
+                    width: 6
+                    height: 6
+                    radius: 3
+                    color: session.dirty ? Theme.orange : Theme.accent
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: session.dirty ? "Unsaved" : "Saved"
+                    font.family: Theme.fontBody
+                    font.pixelSize: 10
+                    color: session.dirty ? Theme.orange : Theme.textTertiary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            // File & Edit Studio Menus
+            Row {
+                spacing: 2
+                StudioButton {
+                    text: "File"
+                    compact: true
+                    variant: "ghost"
+                    onClicked: fileMenu.open()
+                    Menu {
+                        id: fileMenu
+                        y: parent.height + 2
+                        MenuItem { text: "New Project"; onTriggered: { session.newProject(); selection.clearSelection() } }
+                        MenuItem { text: "Open Project… (Ctrl+O)"; onTriggered: openDialog.open() }
+                        MenuItem { text: "Save Project (Ctrl+S)"; onTriggered: session.save() }
+                        MenuItem { text: "Save Project As…"; onTriggered: saveDialog.open() }
+                        MenuSeparator {}
+                        MenuItem { text: "Export Video…"; onTriggered: exportDialog.open() }
+                        MenuSeparator {}
+                        MenuItem { text: "Quit"; onTriggered: Qt.quit() }
+                    }
+                }
+                StudioButton {
+                    text: "Edit"
+                    compact: true
+                    variant: "ghost"
+                    onClicked: editMenu.open()
+                    Menu {
+                        id: editMenu
+                        y: parent.height + 2
+                        MenuItem { text: "Undo (Ctrl+Z)"; enabled: session.canUndo; onTriggered: session.undo() }
+                        MenuItem { text: "Redo (Ctrl+Y)"; enabled: session.canRedo; onTriggered: session.redo() }
+                        MenuSeparator {}
+                        MenuItem { text: "Split at Playhead (S)"; onTriggered: doSplit() }
+                        MenuItem { text: "Delete Selected"; onTriggered: doDelete() }
+                    }
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Center HUD: Glowing Timecode & Undo/Redo/Pills
+            RowLayout {
+                spacing: 6
+
+                TimecodeDisplay {
+                    seconds: root.playhead
+                    totalSeconds: player.durationSec
+                }
+
+                StudioButton {
+                    iconText: "↶"
+                    compact: true
+                    variant: "ghost"
+                    enabled: session.canUndo
+                    onClicked: session.undo()
+                }
+
+                StudioButton {
+                    iconText: "↷"
+                    compact: true
+                    variant: "ghost"
+                    enabled: session.canRedo
+                    onClicked: session.redo()
+                }
+
+                Rectangle { width: 1; height: 16; color: Theme.borderMedium }
+
+                StudioButton {
+                    text: "SNAP"
+                    compact: true
+                    variant: session.snappingEnabled ? "accent" : "ghost"
+                    checked: session.snappingEnabled
+                    onClicked: session.snappingEnabled = !session.snappingEnabled
+                }
+
+                StudioButton {
+                    text: "RIPPLE"
+                    compact: true
+                    variant: session.rippleMode ? "accent" : "ghost"
+                    checked: session.rippleMode
+                    onClicked: session.rippleMode = !session.rippleMode
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Right: Format chip & Glowing Export Action
+            Rectangle {
+                implicitWidth: 86
+                implicitHeight: 24
+                radius: 12
+                color: Theme.bgElevated
+                border.color: Theme.borderSubtle
+                border.width: 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "1080p · 30fps"
+                    font.family: Theme.fontMono
+                    font.pixelSize: 10
+                    color: Theme.textSecondary
+                }
+            }
+
+            StudioButton {
+                text: "Export"
+                iconText: "⇪"
+                variant: "primary"
                 onClicked: exportDialog.open()
             }
         }
     }
 
-    footer: footerBar
-
-    Frame {
+    // ---- Minimal Status Footer ----
+    footer: Rectangle {
         id: footerBar
+        height: 26
+        color: Theme.bgSurface
+        border.color: Theme.borderSubtle
+        border.width: 1
+
         function error(msg) {
             errorLabel.text = msg
             errorTimer.restart()
         }
+
         RowLayout {
             anchors.fill: parent
-            Label { text: "Space play/pause · S split · wheel zooms timeline" ; opacity: 0.6; Layout.fillWidth: true }
-            Label { id: errorLabel; color: "#e0655f" }
-            Timer { id: errorTimer; interval: 6000; onTriggered: errorLabel.text = "" }
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+
+            Text {
+                text: "Space: Play/Pause  ·  S: Split  ·  Del: Delete  ·  Scroll: Zoom Timeline"
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                color: Theme.textTertiary
+                Layout.fillWidth: true
+            }
+
+            Text {
+                id: errorLabel
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+                color: Theme.red
+            }
+
+            Timer {
+                id: errorTimer
+                interval: 6000
+                onTriggered: errorLabel.text = ""
+            }
         }
     }
 
+    // ---- Workspace Split Panels ----
     SplitView {
         anchors.fill: parent
         orientation: Qt.Vertical
 
+        handle: Rectangle {
+            implicitHeight: 3
+            color: Theme.bgApp
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: 1
+                color: SplitHandle.hovered ? Theme.accent : Theme.borderSubtle
+            }
+        }
+
         SplitView {
             SplitView.fillHeight: true
-            SplitView.preferredHeight: 520
+            SplitView.preferredHeight: 530
             orientation: Qt.Horizontal
 
-            MediaBrowser {
-                SplitView.preferredWidth: 280
-                SplitView.minimumWidth: 200
+            handle: Rectangle {
+                implicitWidth: 3
+                color: Theme.bgApp
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 1
+                    color: SplitHandle.hovered ? Theme.accent : Theme.borderSubtle
+                }
             }
+
+            MediaBrowser {
+                SplitView.preferredWidth: 300
+                SplitView.minimumWidth: 240
+            }
+
             PreviewView {
                 id: previewView
                 SplitView.fillWidth: true
-                SplitView.minimumWidth: 320
+                SplitView.minimumWidth: 360
                 playheadSec: root.playhead
             }
+
             Inspector {
-                SplitView.preferredWidth: 300
-                SplitView.minimumWidth: 220
+                SplitView.preferredWidth: 320
+                SplitView.minimumWidth: 260
             }
         }
 
         TimelineView {
-            SplitView.preferredHeight: 240
-            SplitView.minimumHeight: 140
+            SplitView.preferredHeight: 260
+            SplitView.minimumHeight: 160
             playheadSec: root.playhead
         }
     }
@@ -161,6 +358,7 @@ ApplicationWindow {
             }
         }
     }
+
     FileDialog {
         id: saveDialog
         title: "Save project as"

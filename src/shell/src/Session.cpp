@@ -2,12 +2,18 @@
 
 #include "commands/ClipCommands.hpp"
 #include "commands/EffectCommands.hpp"
+#include "commands/SmartCommands.hpp"
 #include "commands/TransitionCommands.hpp"
 #include "effects/EffectSchema.hpp"
+#include "ai/AudioAnalysis.hpp"
+#include "ai/CaptionEngine.hpp"
+#include "ai/SceneDetection.hpp"
 #include "core/Ids.hpp"
 #include "media_ffmpeg/FfmpegProber.hpp"
+#include "media_ffmpeg/FrameDecoder.hpp"
 #include "persist/ProjectSerializer.hpp"
 
+#include <QFile>
 #include <QFileInfo>
 #include <QUrl>
 #include <cmath>
@@ -570,6 +576,195 @@ core::Rational Session::trackEnd(const core::Sequence& seq, const core::Track& t
         }
     }
     return end;
+}
+
+bool Session::autoSilenceCut(const QString& clipId, double thresholdDb, double minDurationSec) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    const std::string cid = clipId.toStdString();
+    core::Clip* clip = seq->findClip(cid);
+    if (clip == nullptr) return false;
+
+    core::Track* track = nullptr;
+    for (auto& t : seq->tracks) {
+        if (std::find(t.clipIds.begin(), t.clipIds.end(), cid) != t.clipIds.end()) {
+            track = &t;
+            break;
+        }
+    }
+    if (track == nullptr) return false;
+
+    auto assetIt = project_.assets.find(clip->assetId);
+    if (assetIt == project_.assets.end()) return false;
+
+    media_ffmpeg::AudioDecoder dec;
+    if (dec.open(assetIt->second.path).isErr()) return false;
+    if (!dec.hasAudio()) return false;
+
+    if (dec.seek(clip->sourceIn).isErr()) return false;
+
+    std::vector<float> pcmFloat;
+    const core::Rational spanDur = clip->sourceOut - clip->sourceIn;
+    const int targetSamples = static_cast<int>(std::ceil(static_cast<double>(spanDur) * 48000.0)) * 2;
+
+    while (static_cast<int>(pcmFloat.size()) < targetSamples) {
+        auto chunkRes = dec.nextChunk(4096);
+        if (chunkRes.isErr()) break;
+        const auto& chunk = chunkRes.value();
+        if (chunk.pcm.empty()) break;
+        for (std::int16_t s : chunk.pcm) {
+            pcmFloat.push_back(static_cast<float>(s) / 32768.0f);
+        }
+    }
+
+    if (pcmFloat.empty()) return false;
+
+    auto silences = ai::AudioAnalysis::detectSilences(
+        pcmFloat.data(), pcmFloat.size(), 48000, 2, thresholdDb, minDurationSec
+    );
+
+    if (silences.empty()) return true;
+
+    for (auto& s : silences) {
+        s.startSec = clip->seqStart + (s.startSec / clip->speed);
+        s.durationSec = s.durationSec / clip->speed;
+    }
+
+    return execute(commands::makeSilenceCutCommand(track->id, cid, silences));
+}
+
+bool Session::autoSceneSplit(const QString& clipId, double threshold) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    const std::string cid = clipId.toStdString();
+    core::Clip* clip = seq->findClip(cid);
+    if (clip == nullptr) return false;
+
+    auto assetIt = project_.assets.find(clip->assetId);
+    if (assetIt == project_.assets.end()) return false;
+
+    media_ffmpeg::VideoDecoder dec;
+    if (dec.open(assetIt->second.path).isErr()) return false;
+
+    const core::Rational step(1, 5); // 5 fps sampling
+    std::vector<core::Rational> sampleTimes;
+    std::vector<double> scores;
+
+    std::vector<uint8_t> prevRgba;
+    core::Rational t = clip->sourceIn;
+    while (t < clip->sourceOut) {
+        if (dec.seek(t).isOk()) {
+            auto frameRes = dec.nextFrame();
+            if (frameRes.isOk()) {
+                const auto& vf = frameRes.value();
+                if (!prevRgba.empty() && vf.width > 0 && vf.height > 0) {
+                    double diff = ai::SceneDetection::calculateFrameDifference(
+                        prevRgba.data(), vf.rgba.data(), vf.width, vf.height, vf.width * 4
+                    );
+                    sampleTimes.push_back(t);
+                    scores.push_back(diff);
+                }
+                prevRgba = vf.rgba;
+            }
+        }
+        t = t + step;
+    }
+
+    auto cuts = ai::SceneDetection::findCutsFromScores(sampleTimes, scores, threshold);
+    if (cuts.empty()) return true;
+
+    std::vector<core::Rational> seqCutPoints;
+    for (const auto& c : cuts) {
+        core::Rational seqPt = clip->seqStart + (c.timestamp - clip->sourceIn) / clip->speed;
+        seqCutPoints.push_back(seqPt);
+    }
+
+    return execute(commands::makeSceneSplitCommand(cid, seqCutPoints));
+}
+
+bool Session::generateAutoCaptions(const QString& transcript, int wordsPerCue) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    ensureTimelineTracks(*seq);
+    core::Track* textTrack = findTrackForKind(*seq, core::TrackKind::Text);
+    if (textTrack == nullptr) return false;
+
+    core::Rational totalDur = trackEnd(*seq, *textTrack);
+    if (totalDur.num() <= 0) {
+        for (const auto& t : seq->tracks) {
+            core::Rational e = trackEnd(*seq, t);
+            if (e > totalDur) totalDur = e;
+        }
+    }
+    if (totalDur.num() <= 0) totalDur = core::Rational(10, 1);
+
+    auto cues = ai::CaptionEngine::chunkTranscript(transcript.toStdString(), totalDur, static_cast<std::size_t>(wordsPerCue));
+    if (cues.empty()) return false;
+
+    return execute(commands::makeAddCaptionsCommand(textTrack->id, cues));
+}
+
+bool Session::importSubtitles(const QString& srtContent) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    ensureTimelineTracks(*seq);
+    core::Track* textTrack = findTrackForKind(*seq, core::TrackKind::Text);
+    if (textTrack == nullptr) return false;
+
+    auto cues = ai::CaptionEngine::parseSrt(srtContent.toStdString());
+    if (cues.empty()) return false;
+
+    return execute(commands::makeAddCaptionsCommand(textTrack->id, cues));
+}
+
+bool Session::importSubtitlesFile(const QUrl& url) {
+    const QString local = url.isLocalFile() ? url.toLocalFile() : url.toString();
+    QFile f(local);
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        emit error("Failed to open subtitle file: " + local);
+        return false;
+    }
+    return importSubtitles(QString::fromUtf8(f.readAll()));
+}
+
+QString Session::exportSubtitles() const {
+    const core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return "";
+    const core::Track* textTrack = nullptr;
+    for (const auto& t : seq->tracks) {
+        if (t.kind == core::TrackKind::Text) {
+            textTrack = &t;
+            break;
+        }
+    }
+    if (textTrack == nullptr) return "";
+
+    std::vector<ai::CaptionCue> cues;
+    for (const auto& cid : textTrack->clipIds) {
+        auto it = seq->clips.find(cid);
+        if (it != seq->clips.end()) {
+            cues.push_back(ai::CaptionCue{
+                it->second.seqStart,
+                it->second.seqDuration(),
+                it->second.text
+            });
+        }
+    }
+    std::sort(cues.begin(), cues.end(), [](const auto& a, const auto& b) {
+        return a.startSec < b.startSec;
+    });
+    return QString::fromStdString(ai::CaptionEngine::exportSrt(cues));
+}
+
+bool Session::exportSubtitlesFile(const QUrl& url) const {
+    const QString local = url.isLocalFile() ? url.toLocalFile() : url.toString();
+    QFile f(local);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+    const QString srt = exportSubtitles();
+    f.write(srt.toUtf8());
+    return true;
 }
 
 } // namespace editor::shell
