@@ -81,17 +81,26 @@ struct Clip {
     double opacity = 1.0;
     Transform transform{};
     std::vector<Effect> effects;
+    Rational speed{1, 1};
     // Text payload (Stage 1 title). Stays here so preview/export share it.
     std::string text;
     std::string fontFamily;
     double fontSizePt = 48.0;
 
-    [[nodiscard]] Rational seqDuration() const { return sourceOut - sourceIn; }
+    [[nodiscard]] Rational seqDuration() const {
+        if (speed.num() <= 0) {
+            return sourceOut - sourceIn;
+        }
+        return (sourceOut - sourceIn) / speed;
+    }
     [[nodiscard]] Rational seqEnd() const { return seqStart + seqDuration(); }
     [[nodiscard]] TimeRange seqRange() const { return TimeRange{seqStart, seqDuration()}; }
-    /// Map a sequence time to source time (speed == 1 in Stage 0/1).
+    /// Map a sequence time to source time.
     [[nodiscard]] Rational mapToSource(const Rational& seqTime) const {
-        return sourceIn + (seqTime - seqStart);
+        if (speed.num() <= 0) {
+            return sourceIn + (seqTime - seqStart);
+        }
+        return sourceIn + (seqTime - seqStart) * speed;
     }
     [[nodiscard]] Result<void> validate(const Asset* assetOrNull) const;
 };

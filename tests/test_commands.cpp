@@ -2,6 +2,7 @@
 
 #include "commands/ClipCommands.hpp"
 #include "commands/Command.hpp"
+#include "commands/EffectCommands.hpp"
 #include "commands/TransitionCommands.hpp"
 #include "core/Model.hpp"
 
@@ -279,6 +280,94 @@ TEST_CASE("commands: transition add, update, remove, and cascade delete") {
     // Undo restoring the clip also restores its transition
     CHECK(undo.undo(p));
     CHECK_EQ(p.sequences.front().transitions.size(), 1);
+}
+
+TEST_CASE("commands: effect add + update + remove + undo") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", makeClip("c1")), p, error));
+
+    core::Effect eff;
+    eff.type = "vignette";
+    eff.enabled = true;
+    eff.order = 0;
+    eff.params["intensity"] = 0.8;
+    eff.params["radius"] = 0.5;
+
+    // Add effect
+    CHECK(undo.execute(commands::makeAddEffectCommand("c1", eff), p, error));
+    const auto& clip = p.sequences.front().clips.at("c1");
+    CHECK_EQ(clip.effects.size(), 1);
+    CHECK_EQ(clip.effects[0].type, std::string("vignette"));
+    CHECK_EQ(clip.effects[0].params.at("intensity"), 0.8);
+
+    // Update effect param
+    CHECK(undo.execute(commands::makeUpdateEffectCommand("c1", 0, {{"intensity", 0.4}, {"radius", 0.5}}, {}), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects[0].params.at("intensity"), 0.4);
+
+    // Undo update
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects[0].params.at("intensity"), 0.8);
+
+    // Redo update
+    CHECK(undo.redo(p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects[0].params.at("intensity"), 0.4);
+
+    // Remove effect
+    CHECK(undo.execute(commands::makeRemoveEffectCommand("c1", 0), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects.size(), 0);
+
+    // Undo remove
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects.size(), 1);
+    CHECK_EQ(p.sequences.front().clips.at("c1").effects[0].type, std::string("vignette"));
+}
+
+TEST_CASE("commands: set clip speed with and without ripple") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+
+    core::Clip c1 = makeClip("c1");
+    c1.seqStart = core::Rational(0);
+    c1.sourceOut = core::Rational(4, 1); // seqDuration = 4s
+
+    core::Clip c2 = makeClip("c2");
+    c2.seqStart = core::Rational(4, 1);
+    c2.sourceOut = core::Rational(4, 1); // seqDuration = 4s
+
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c1), p, error));
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c2), p, error));
+
+    // 1. Set speed without ripple: 2.0x (Rational(2, 1))
+    // c1 duration becomes 4 / 2 = 2s. c2 start remains 4s (gap of 2s).
+    CHECK(undo.execute(commands::makeSetClipSpeedCommand("c1", core::Rational(2, 1), false), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").speed, core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqDuration(), core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(4, 1));
+
+    // Undo: c1 speed restored to 1.0x
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").speed, core::Rational(1, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqDuration(), core::Rational(4, 1));
+
+    // 2. Set speed WITH ripple: 2.0x
+    // c1 duration becomes 2s (delta = -2s). c2 start should shift from 4s to 2s.
+    CHECK(undo.execute(commands::makeSetClipSpeedCommand("c1", core::Rational(2, 1), true), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").speed, core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqDuration(), core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(2, 1));
+
+    // Undo ripple: c1 duration is 4s, c2 start is 4s
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").speed, core::Rational(1, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(4, 1));
+
+    // Redo ripple: c1 duration is 2s, c2 start is 2s
+    CHECK(undo.redo(p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").speed, core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(2, 1));
 }
 
 int main() {

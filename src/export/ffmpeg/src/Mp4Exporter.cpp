@@ -1,5 +1,6 @@
 #include "export_ffmpeg/Mp4Exporter.hpp"
 
+#include "effects/PixelPipeline.hpp"
 #include "media_ffmpeg/FfmpegTime.hpp"
 #include "media_ffmpeg/FrameDecoder.hpp"
 #include "render/Evaluator.hpp"
@@ -196,10 +197,10 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
     if (frameA == nullptr && frameB == nullptr) {
         return;
     }
-    // Fast path: untransformed, opaque single frame without transition (preserves Stage 1 exact bytes)
-    if (!layer.inTransition && layer.transform.scale == 1.0 && layer.transform.x == 0.0 &&
-        layer.transform.y == 0.0 && layer.opacity >= 0.99999 && frameA != nullptr &&
-        frameA->width > 0 && frameA->height > 0) {
+    // Fast path: untransformed, opaque single frame without transition or effects (preserves Stage 1 exact bytes)
+    if (!layer.inTransition && layer.effects.empty() && layer.transform.scale == 1.0 &&
+        layer.transform.x == 0.0 && layer.transform.y == 0.0 && layer.opacity >= 0.99999 &&
+        frameA != nullptr && frameA->width > 0 && frameA->height > 0) {
         const int copyW = (std::min)(frameA->width, canvasW);
         const int copyH = (std::min)(frameA->height, canvasH);
         const int dstX = (canvasW - copyW) / 2;
@@ -218,6 +219,24 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
     const int wA = frameA ? frameA->width : (frameB ? frameB->width : canvasW);
     const int hA = frameA ? frameA->height : (frameB ? frameB->height : canvasH);
     if (wA <= 0 || hA <= 0) return;
+
+    std::vector<uint8_t> effRgbaA;
+    const uint8_t* dataA = frameA ? frameA->rgba.data() : nullptr;
+    if (frameA && !layer.effects.empty()) {
+        effRgbaA = frameA->rgba;
+        effects::PixelPipeline::applyEffects(effRgbaA.data(), frameA->width, frameA->height,
+                                             frameA->width * 4, layer.effects);
+        dataA = effRgbaA.data();
+    }
+
+    std::vector<uint8_t> effRgbaB;
+    const uint8_t* dataB = frameB ? frameB->rgba.data() : nullptr;
+    if (frameB && !layer.secondaryEffects.empty()) {
+        effRgbaB = frameB->rgba;
+        effects::PixelPipeline::applyEffects(effRgbaB.data(), frameB->width, frameB->height,
+                                             frameB->width * 4, layer.secondaryEffects);
+        dataB = effRgbaB.data();
+    }
 
     double aspect = static_cast<double>(wA) / static_cast<double>(hA);
     double canvasAspect = static_cast<double>(canvasW) / static_cast<double>(canvasH);
@@ -244,18 +263,18 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
             if (dstX < 0 || dstX >= canvasW) continue;
 
             uint8_t rA = 0, gA = 0, bA = 0, aA = 0;
-            if (frameA && frameA->width > 0 && frameA->height > 0) {
+            if (dataA && frameA && frameA->width > 0 && frameA->height > 0) {
                 int srcXA = std::clamp(static_cast<int>(static_cast<double>(x) * frameA->width / fitW), 0, frameA->width - 1);
                 int srcYA = std::clamp(static_cast<int>(static_cast<double>(y) * frameA->height / fitH), 0, frameA->height - 1);
-                const uint8_t* pA = frameA->rgba.data() + (srcYA * frameA->width + srcXA) * 4;
+                const uint8_t* pA = dataA + (srcYA * frameA->width + srcXA) * 4;
                 rA = pA[0]; gA = pA[1]; bA = pA[2]; aA = pA[3];
             }
 
             uint8_t rB = 0, gB = 0, bB = 0, aB = 0;
-            if (frameB && frameB->width > 0 && frameB->height > 0) {
+            if (dataB && frameB && frameB->width > 0 && frameB->height > 0) {
                 int srcXB = std::clamp(static_cast<int>(static_cast<double>(x) * frameB->width / fitW), 0, frameB->width - 1);
                 int srcYB = std::clamp(static_cast<int>(static_cast<double>(y) * frameB->height / fitH), 0, frameB->height - 1);
-                const uint8_t* pB = frameB->rgba.data() + (srcYB * frameB->width + srcXB) * 4;
+                const uint8_t* pB = dataB + (srcYB * frameB->width + srcXB) * 4;
                 rB = pB[0]; gB = pB[1]; bB = pB[2]; aB = pB[3];
             }
 

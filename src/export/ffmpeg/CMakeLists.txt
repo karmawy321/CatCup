@@ -7,6 +7,7 @@ target_link_libraries(export_ffmpeg
     PUBLIC
         core
         render
+        effects
         media
         media_ffmpeg
     PRIVATE

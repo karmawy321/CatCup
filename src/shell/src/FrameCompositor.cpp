@@ -1,6 +1,7 @@
 #include "shell/FrameCompositor.hpp"
 #include "shell/Session.hpp"
 
+#include "effects/PixelPipeline.hpp"
 #include "render/Evaluator.hpp"
 
 #include <QPainter>
@@ -78,8 +79,12 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
             imgA.fill(Qt::transparent);
             if (optA) {
                 const auto& fA = *optA;
-                QImage rawA(fA.rgba.data(), fA.width, fA.height, fA.width * 4,
-                            QImage::Format_RGBA8888);
+                QImage rawA = QImage(fA.rgba.data(), fA.width, fA.height, fA.width * 4,
+                                     QImage::Format_RGBA8888).copy();
+                if (!layer.effects.empty()) {
+                    effects::PixelPipeline::applyEffects(rawA.bits(), rawA.width(), rawA.height(),
+                                                         static_cast<int>(rawA.bytesPerLine()), layer.effects);
+                }
                 const QSize fitA =
                     QSize(fA.width, fA.height).scaled(QSize(w, h), Qt::KeepAspectRatio);
                 QPainter pa(&imgA);
@@ -93,8 +98,12 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
             imgB.fill(Qt::transparent);
             if (optB) {
                 const auto& fB = *optB;
-                QImage rawB(fB.rgba.data(), fB.width, fB.height, fB.width * 4,
-                            QImage::Format_RGBA8888);
+                QImage rawB = QImage(fB.rgba.data(), fB.width, fB.height, fB.width * 4,
+                                     QImage::Format_RGBA8888).copy();
+                if (!layer.secondaryEffects.empty()) {
+                    effects::PixelPipeline::applyEffects(rawB.bits(), rawB.width(), rawB.height(),
+                                                         static_cast<int>(rawB.bytesPerLine()), layer.secondaryEffects);
+                }
                 const QSize fitB =
                     QSize(fB.width, fB.height).scaled(QSize(w, h), Qt::KeepAspectRatio);
                 QPainter pb(&imgB);
@@ -174,8 +183,12 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
             auto opt = getDecodedFrame(layer.assetId, layer.sourceTime);
             if (opt) {
                 const auto& f = *opt;
-                QImage raw(f.rgba.data(), f.width, f.height, f.width * 4,
-                           QImage::Format_RGBA8888);
+                QImage raw = QImage(f.rgba.data(), f.width, f.height, f.width * 4,
+                                    QImage::Format_RGBA8888).copy();
+                if (!layer.effects.empty()) {
+                    effects::PixelPipeline::applyEffects(raw.bits(), raw.width(), raw.height(),
+                                                         static_cast<int>(raw.bytesPerLine()), layer.effects);
+                }
                 const QSize fitted =
                     QSize(f.width, f.height).scaled(QSize(w, h), Qt::KeepAspectRatio);
 

@@ -79,6 +79,9 @@ Result<void> Clip::validate(const Asset* assetOrNull) const {
     if (opacity < 0.0 || opacity > 1.0) {
         return Result<void>::fail("clip opacity must be in [0, 1] (clip " + id + ")");
     }
+    if (speed.num() <= 0) {
+        return Result<void>::fail("clip speed must be positive (clip " + id + ")");
+    }
     if (!(sourceIn < sourceOut)) {
         return Result<void>::fail("clip sourceIn must be < sourceOut (clip " + id + ")");
     }

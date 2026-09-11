@@ -60,6 +60,16 @@ public:
     Q_INVOKABLE bool setClipTransform(const QString& clipId, double scale, double x,
                                       double y, double rotationDeg);
     Q_INVOKABLE bool setClipOpacity(const QString& clipId, double opacity);
+    Q_INVOKABLE bool setClipSpeed(const QString& clipId, double speed);
+    Q_INVOKABLE bool addClipEffect(const QString& clipId, const QString& effectType);
+    Q_INVOKABLE bool removeClipEffect(const QString& clipId, int effectIndex);
+    Q_INVOKABLE bool updateClipEffectParam(const QString& clipId, int effectIndex,
+                                          const QString& paramName, double paramValue);
+    Q_INVOKABLE bool updateClipEffectStrParam(const QString& clipId, int effectIndex,
+                                             const QString& paramName, const QString& paramValue);
+    Q_INVOKABLE bool setClipColorAdjust(const QString& clipId, double brightness,
+                                        double contrast, double saturation,
+                                        double temp, double tint);
     Q_INVOKABLE bool setClipText(const QString& clipId, const QString& text,
                                  const QString& fontFamily, double fontSizePt);
     Q_INVOKABLE double snapTime(double targetSec, double thresholdSec = 0.2) const;

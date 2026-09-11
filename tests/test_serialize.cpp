@@ -247,6 +247,71 @@ TEST_CASE("serialize: Stage 2 opacity and transitions round-trip") {
     CHECK_EQ(s.transitions.front().alignment, core::TransitionAlignment::CenterOnCut);
 }
 
+TEST_CASE("serialize: clip speed and effects round-trip") {
+    core::Project p;
+    p.name = "effects_speed_test";
+    core::Sequence seq;
+    seq.id = "s1";
+    core::Track t;
+    t.id = "v1";
+    t.kind = core::TrackKind::Video;
+    seq.tracks.push_back(t);
+
+    core::Clip c;
+    c.id = "c1";
+    c.name = "clip_with_effects";
+    c.sourceIn = core::Rational(0);
+    c.sourceOut = core::Rational(10, 1);
+    c.seqStart = core::Rational(0);
+    c.speed = core::Rational(3, 2); // 1.5x speed
+
+    // Effect 1: color_adjust
+    core::Effect e1;
+    e1.type = "color_adjust";
+    e1.enabled = true;
+    e1.order = 0;
+    e1.params["brightness"] = 0.2;
+    e1.params["contrast"] = 1.1;
+    e1.params["saturation"] = 1.3;
+    c.effects.push_back(e1);
+
+    // Effect 2: chroma_key with strParams
+    core::Effect e2;
+    e2.type = "chroma_key";
+    e2.enabled = true;
+    e2.order = 1;
+    e2.params["similarity"] = 0.45;
+    e2.params["smoothness"] = 0.15;
+    e2.strParams["key_color"] = "#00FF00";
+    c.effects.push_back(e2);
+
+    seq.clips.emplace(c.id, c);
+    seq.tracks.front().clipIds.push_back(c.id);
+    p.sequences.push_back(seq);
+    p.activeSequenceId = "s1";
+
+    auto json = persist::projectToJson(p);
+    CHECK(json.isOk());
+
+    auto back = persist::projectFromJson(json.value());
+    CHECK(back.isOk());
+
+    const auto& roundtripClip = back.value().sequences.front().clips.at("c1");
+    CHECK_EQ(roundtripClip.speed, core::Rational(3, 2));
+    CHECK_EQ(roundtripClip.effects.size(), 2);
+
+    // Verify e1
+    CHECK_EQ(roundtripClip.effects[0].type, std::string("color_adjust"));
+    CHECK_EQ(roundtripClip.effects[0].params.at("brightness"), 0.2);
+    CHECK_EQ(roundtripClip.effects[0].params.at("contrast"), 1.1);
+    CHECK_EQ(roundtripClip.effects[0].params.at("saturation"), 1.3);
+
+    // Verify e2
+    CHECK_EQ(roundtripClip.effects[1].type, std::string("chroma_key"));
+    CHECK_EQ(roundtripClip.effects[1].params.at("similarity"), 0.45);
+    CHECK_EQ(roundtripClip.effects[1].strParams.at("key_color"), std::string("#00FF00"));
+}
+
 int main() {
     return editor::tests::runAll();
 }

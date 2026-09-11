@@ -31,6 +31,10 @@ struct PlacedClip {
     core::Id secondaryAssetId;
     core::Rational secondarySourceTime{0};
     double blendFactor = 0.0; // 0.0 = primary/outgoing, 1.0 = secondary/incoming
+
+    // Effects stack (Stage 3)
+    std::vector<core::Effect> effects;
+    std::vector<core::Effect> secondaryEffects;
 };
 
 struct FramePlan {

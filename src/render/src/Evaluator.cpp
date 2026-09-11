@@ -41,6 +41,8 @@ FramePlan Evaluator::evaluateVideoAt(const core::Sequence& seq, const core::Rati
                 placed.isText = false;
                 placed.transform = from->transform;
                 placed.opacity = from->opacity;
+                placed.effects = from->effects;
+                placed.secondaryEffects = to->effects;
 
                 placed.inTransition = true;
                 placed.transitionId = tr.id;
@@ -84,6 +86,7 @@ FramePlan Evaluator::evaluateVideoAt(const core::Sequence& seq, const core::Rati
                 placed.isText = track.kind == core::TrackKind::Text || !clip.text.empty();
                 placed.transform = clip.transform;
                 placed.opacity = clip.opacity;
+                placed.effects = clip.effects;
                 plan.layers.push_back(std::move(placed));
             }
         }

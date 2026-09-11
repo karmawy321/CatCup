@@ -145,6 +145,7 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
                 {"seqStart", rationalToJson(c.seqStart)},
                 {"enabled", JsonValue(c.enabled)},
                 {"opacity", JsonValue(c.opacity)},
+                {"speed", rationalToJson(c.speed)},
                 {"transform", JsonValue(std::move(tr))},
                 {"effects", JsonValue(std::move(effects))},
                 {"text", JsonValue(c.text)},
@@ -397,6 +398,12 @@ core::Result<core::Project> projectFromJson(const JsonValue& root) {
                         f2 != co->end() && (f2->second.isDouble() || f2->second.isInt())) {
                         c.opacity = f2->second.isDouble() ? f2->second.asDouble()
                                                           : static_cast<double>(f2->second.asInt());
+                    }
+                    if (const auto f2 = co->find("speed"); f2 != co->end()) {
+                        auto sp = rationalFromJson(f2->second, "clip.speed");
+                        if (sp.isOk() && sp.value().num() > 0) {
+                            c.speed = sp.value();
+                        }
                     }
                     if (const auto f2 = co->find("transform");
                         f2 != co->end() && f2->second.isObject()) {

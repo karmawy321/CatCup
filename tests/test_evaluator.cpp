@@ -200,6 +200,105 @@ TEST_CASE("evaluator: transition blends incoming and outgoing clips") {
     CHECK_EQ(audioSpans[1].clipId, std::string("ca2"));
 }
 
+TEST_CASE("evaluator: clip speed scales duration and source mapping") {
+    core::Sequence seq;
+    seq.id = "s";
+    core::Track t;
+    t.id = "v";
+    t.kind = core::TrackKind::Video;
+    seq.tracks.push_back(t);
+
+    core::Clip c;
+    c.id = "c1";
+    c.assetId = "a1";
+    c.sourceIn = core::Rational(2, 1);
+    c.sourceOut = core::Rational(6, 1); // 4s source duration
+    c.seqStart = core::Rational(1, 1);
+    c.speed = core::Rational(2, 1); // 2x speed -> seqDuration = 2s (active in [1, 3))
+    seq.clips.emplace(c.id, c);
+    seq.tracks.front().clipIds.push_back(c.id);
+
+    // Before clip
+    CHECK(render::Evaluator::evaluateVideoAt(seq, core::Rational(0)).layers.empty());
+
+    // In middle: seq time 2s -> offset 1s * speed 2 + sourceIn 2 = 4s source time
+    auto planMid = render::Evaluator::evaluateVideoAt(seq, core::Rational(2, 1));
+    CHECK_EQ(planMid.layers.size(), 1);
+    CHECK_EQ(planMid.layers[0].sourceTime, core::Rational(4, 1));
+
+    // After clip: seq time 3s -> clip ended
+    CHECK(render::Evaluator::evaluateVideoAt(seq, core::Rational(3, 1)).layers.empty());
+}
+
+TEST_CASE("evaluator: clip effects are propagated to PlacedClip layers") {
+    core::Sequence seq;
+    seq.id = "s";
+    core::Track t;
+    t.id = "v";
+    t.kind = core::TrackKind::Video;
+    seq.tracks.push_back(t);
+
+    core::Clip c1;
+    c1.id = "c1";
+    c1.assetId = "a1";
+    c1.sourceIn = core::Rational(0);
+    c1.sourceOut = core::Rational(4, 1);
+    c1.seqStart = core::Rational(0);
+
+    core::Effect eff;
+    eff.type = "vignette";
+    eff.enabled = true;
+    eff.order = 0;
+    eff.params["intensity"] = 0.7;
+    c1.effects.push_back(eff);
+
+    core::Clip c2;
+    c2.id = "c2";
+    c2.assetId = "a2";
+    c2.sourceIn = core::Rational(0);
+    c2.sourceOut = core::Rational(4, 1);
+    c2.seqStart = core::Rational(4, 1);
+
+    core::Effect eff2;
+    eff2.type = "blur";
+    eff2.enabled = true;
+    eff2.order = 0;
+    eff2.params["radius"] = 5.0;
+    c2.effects.push_back(eff2);
+
+    seq.clips.emplace(c1.id, c1);
+    seq.clips.emplace(c2.id, c2);
+    seq.tracks.front().clipIds.push_back(c1.id);
+    seq.tracks.front().clipIds.push_back(c2.id);
+
+    core::Transition tr;
+    tr.id = "tr1";
+    tr.trackId = "v";
+    tr.fromClipId = "c1";
+    tr.toClipId = "c2";
+    tr.type = "crossfade";
+    tr.duration = core::Rational(2, 1);
+    tr.alignment = core::TransitionAlignment::CenterOnCut;
+    seq.transitions.push_back(tr);
+
+    // At 2s (c1 alone): PlacedClip carries c1.effects
+    auto p1 = render::Evaluator::evaluateVideoAt(seq, core::Rational(2, 1));
+    CHECK_EQ(p1.layers.size(), 1);
+    CHECK_EQ(p1.layers[0].effects.size(), 1);
+    CHECK_EQ(p1.layers[0].effects[0].type, std::string("vignette"));
+    CHECK(p1.layers[0].secondaryEffects.empty());
+
+    // At 4s (in transition between c1 and c2):
+    // layer.effects has c1's effects, layer.secondaryEffects has c2's effects
+    auto p2 = render::Evaluator::evaluateVideoAt(seq, core::Rational(4, 1));
+    CHECK_EQ(p2.layers.size(), 1);
+    CHECK(p2.layers[0].inTransition);
+    CHECK_EQ(p2.layers[0].effects.size(), 1);
+    CHECK_EQ(p2.layers[0].effects[0].type, std::string("vignette"));
+    CHECK_EQ(p2.layers[0].secondaryEffects.size(), 1);
+    CHECK_EQ(p2.layers[0].secondaryEffects[0].type, std::string("blur"));
+}
+
 int main() {
     return editor::tests::runAll();
 }

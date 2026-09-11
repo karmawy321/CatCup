@@ -202,6 +202,28 @@ TEST_CASE("mp4: pre-cancelled export fails cleanly with no leftover") {
     CHECK(!std::filesystem::exists(out));
 }
 
+TEST_CASE("mp4: effect visibly changes exported video") {
+    const std::string withoutEffect = kTmp + "/s1_plain.mp4";
+    const std::string withEffect = kTmp + "/s1_effect.mp4";
+
+    core::Project p = makeDemo(false);
+    core::Effect eff;
+    eff.type = "vignette";
+    eff.enabled = true;
+    eff.params["intensity"] = 1.0;
+    eff.params["radius"] = 0.5;
+    p.sequences.front().clips.at("c1").effects.push_back(eff);
+
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = withEffect;
+    std::atomic_bool cancel{false};
+    CHECK(exporter.run(p, "seq-1", opts, cancel, {}).isOk());
+
+    CHECK(std::filesystem::exists(withEffect));
+    CHECK(shaOfFile(withEffect) != shaOfFile(withoutEffect));
+}
+
 int main() {
     return editor::tests::runAll();
 }

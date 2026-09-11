@@ -1,7 +1,9 @@
 #include "shell/Session.hpp"
 
 #include "commands/ClipCommands.hpp"
+#include "commands/EffectCommands.hpp"
 #include "commands/TransitionCommands.hpp"
+#include "effects/EffectSchema.hpp"
 #include "core/Ids.hpp"
 #include "media_ffmpeg/FfmpegProber.hpp"
 #include "persist/ProjectSerializer.hpp"
@@ -301,6 +303,95 @@ bool Session::setClipOpacity(const QString& clipId, double opacity) {
         return false;
     }
     return execute(commands::makeSetOpacityCommand(clipId.toStdString(), opacity));
+}
+
+bool Session::setClipSpeed(const QString& clipId, double speed) {
+    if (clipId.isEmpty() || speed <= 0.0) {
+        return false;
+    }
+    const auto micros = static_cast<std::int64_t>(std::llround(speed * 1000.0));
+    const core::Rational ratSpeed(micros, 1000);
+    return execute(commands::makeSetClipSpeedCommand(clipId.toStdString(), ratSpeed, rippleMode_));
+}
+
+bool Session::addClipEffect(const QString& clipId, const QString& effectType) {
+    if (clipId.isEmpty() || effectType.isEmpty()) {
+        return false;
+    }
+    core::Effect eff;
+    eff.type = effectType.toStdString();
+    eff.enabled = true;
+    const auto* def = effects::EffectRegistry::defaults().find(eff.type);
+    if (def != nullptr) {
+        for (const auto& p : def->params) {
+            eff.params[p.name] = p.def;
+        }
+    }
+    return execute(commands::makeAddEffectCommand(clipId.toStdString(), std::move(eff)));
+}
+
+bool Session::removeClipEffect(const QString& clipId, int effectIndex) {
+    if (clipId.isEmpty() || effectIndex < 0) {
+        return false;
+    }
+    return execute(commands::makeRemoveEffectCommand(clipId.toStdString(), static_cast<size_t>(effectIndex)));
+}
+
+bool Session::updateClipEffectParam(const QString& clipId, int effectIndex,
+                                    const QString& paramName, double paramValue) {
+    if (clipId.isEmpty() || effectIndex < 0 || paramName.isEmpty()) {
+        return false;
+    }
+    std::map<std::string, double> p;
+    p[paramName.toStdString()] = paramValue;
+    return execute(commands::makeUpdateEffectCommand(clipId.toStdString(), static_cast<size_t>(effectIndex),
+                                                     std::move(p), {}));
+}
+
+bool Session::updateClipEffectStrParam(const QString& clipId, int effectIndex,
+                                       const QString& paramName, const QString& paramValue) {
+    if (clipId.isEmpty() || effectIndex < 0 || paramName.isEmpty()) {
+        return false;
+    }
+    std::map<std::string, std::string> sp;
+    sp[paramName.toStdString()] = paramValue.toStdString();
+    return execute(commands::makeUpdateEffectCommand(clipId.toStdString(), static_cast<size_t>(effectIndex),
+                                                     {}, std::move(sp)));
+}
+
+bool Session::setClipColorAdjust(const QString& clipId, double brightness,
+                                 double contrast, double saturation,
+                                 double temp, double tint) {
+    if (clipId.isEmpty()) {
+        return false;
+    }
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) return false;
+    core::Clip* clip = seq->findClip(clipId.toStdString());
+    if (clip == nullptr) return false;
+
+    // Check if color_adjust effect already exists on clip
+    for (size_t i = 0; i < clip->effects.size(); ++i) {
+        if (clip->effects[i].type == "color_adjust") {
+            std::map<std::string, double> p;
+            p["brightness"] = brightness;
+            p["contrast"] = contrast;
+            p["saturation"] = saturation;
+            p["temperature"] = temp;
+            p["tint"] = tint;
+            return execute(commands::makeUpdateEffectCommand(clipId.toStdString(), i, std::move(p), {}));
+        }
+    }
+    // If not found, add one!
+    core::Effect eff;
+    eff.type = "color_adjust";
+    eff.enabled = true;
+    eff.params["brightness"] = brightness;
+    eff.params["contrast"] = contrast;
+    eff.params["saturation"] = saturation;
+    eff.params["temperature"] = temp;
+    eff.params["tint"] = tint;
+    return execute(commands::makeAddEffectCommand(clipId.toStdString(), std::move(eff)));
 }
 
 QString Session::addTransition(const QString& trackId, const QString& fromClipId,

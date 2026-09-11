@@ -1,5 +1,6 @@
 add_library(effects STATIC
     src/EffectRegistry.cpp
+    src/PixelPipeline.cpp
 )
 
 target_include_directories(effects PUBLIC include)

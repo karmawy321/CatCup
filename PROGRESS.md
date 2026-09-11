@@ -9,7 +9,9 @@ read sections 1–3, then work from section 5.
 |---|---|---|
 | 0 — domain, commands, versioned JSON persistence, headless CLI | Done | `ctest --preset debug` (Qt/FFmpeg-free, MSVC only) |
 | 1 — Qt shell, FFmpeg media, audio-clocked preview, MP4 export | Done | `ctest --preset s1`: **13/13 green** (units + real MP4 + 30 s gate + QML smoke) |
-| 2 — multitrack blend, snapping/ripple, transitions library | Next | Seat reserved: `EffectRegistry`, `FramePlan` blend slot (see §5) |
+| 2 — multitrack blend, snapping/ripple, transitions library | Done | Transitions engine, Center/Start/End alignment, wipe/crossfade/dip |
+| 3 — creative tools (color grading, chroma key, filters, speed) | Done | Pure PixelPipeline parity, Color adjust, ChromaKey, Vignette, Blur, Sharpen, Clip Speed |
+| 4 — AI & smart automation | Next | AI transcription, auto-captioning, smart cuts, scene detection |
 
 Stage 1 gate, all executed: 30 s source → import → two cuts at exact thirds →
 3 s title → save → reopen (900 mock frames) → real export: **h264 1280x720@30

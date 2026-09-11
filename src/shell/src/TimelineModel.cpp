@@ -164,6 +164,7 @@ QVariantMap TimelineModel::clipInfo(const QString& clipId) const {
     m["durationSec"] = static_cast<double>(clip->seqDuration());
     m["sourceInSec"] = static_cast<double>(clip->sourceIn);
     m["opacity"] = clip->opacity;
+    m["speed"] = static_cast<double>(clip->speed);
     m["text"] = QString::fromStdString(clip->text);
     m["fontFamily"] = QString::fromStdString(clip->fontFamily);
     m["fontSizePt"] = clip->fontSizePt;
@@ -171,6 +172,40 @@ QVariantMap TimelineModel::clipInfo(const QString& clipId) const {
     m["x"] = clip->transform.x;
     m["y"] = clip->transform.y;
     m["rotation"] = clip->transform.rotationDeg;
+
+    QVariantList effs;
+    double brightness = 0.0, contrast = 1.0, saturation = 1.0, temp = 0.0, tint = 0.0;
+    for (const auto& e : clip->effects) {
+        QVariantMap em;
+        em["type"] = QString::fromStdString(e.type);
+        em["enabled"] = e.enabled;
+        em["order"] = e.order;
+        QVariantMap pm;
+        for (const auto& [k, v] : e.params) {
+            pm[QString::fromStdString(k)] = v;
+        }
+        em["params"] = pm;
+        QVariantMap spm;
+        for (const auto& [k, v] : e.strParams) {
+            spm[QString::fromStdString(k)] = QString::fromStdString(v);
+        }
+        em["strParams"] = spm;
+        effs.push_back(em);
+
+        if (e.type == "color_adjust") {
+            auto it = e.params.find("brightness"); if (it != e.params.end()) brightness = it->second;
+            it = e.params.find("contrast"); if (it != e.params.end()) contrast = it->second;
+            it = e.params.find("saturation"); if (it != e.params.end()) saturation = it->second;
+            it = e.params.find("temperature"); if (it != e.params.end()) temp = it->second;
+            it = e.params.find("tint"); if (it != e.params.end()) tint = it->second;
+        }
+    }
+    m["effects"] = effs;
+    m["brightness"] = brightness;
+    m["contrast"] = contrast;
+    m["saturation"] = saturation;
+    m["temperature"] = temp;
+    m["tint"] = tint;
     return m;
 }
 

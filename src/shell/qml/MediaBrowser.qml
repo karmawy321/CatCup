@@ -22,6 +22,7 @@ Pane {
             TabButton { text: "Media" }
             TabButton { text: "Text" }
             TabButton { text: "Transitions" }
+            TabButton { text: "Effects" }
         }
 
         TextField {
@@ -157,6 +158,69 @@ Pane {
                     onClicked: applyCurrentTransition()
                 }
             }
+
+            // ---- Effects tab
+            ColumnLayout {
+                spacing: 8
+                Label { text: "Select an effect or color preset to apply to the selected clip."; opacity: 0.7; font.pointSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                ListView {
+                    id: effectList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 6
+                    model: ListModel {
+                        ListElement { name: "Vignette"; typeName: "vignette"; desc: "Cinematic dark edge shading"; isPreset: false }
+                        ListElement { name: "Box Blur"; typeName: "blur"; desc: "Soft focal blur effect"; isPreset: false }
+                        ListElement { name: "Sharpen"; typeName: "sharpen"; desc: "Edge definition enhancer"; isPreset: false }
+                        ListElement { name: "Chroma Key"; typeName: "chroma_key"; desc: "Green screen background removal"; isPreset: false }
+                        ListElement { name: "Warm Cinema"; typeName: "preset_warm"; desc: "Golden hour warm tones (+temp, +contrast)"; isPreset: true }
+                        ListElement { name: "Cool Film"; typeName: "preset_cool"; desc: "Modern teal film look (-temp, +contrast)"; isPreset: true }
+                        ListElement { name: "Black & White"; typeName: "preset_bw"; desc: "Classic monochrome (0 saturation)"; isPreset: true }
+                        ListElement { name: "Vibrant Punch"; typeName: "preset_vibrant"; desc: "Rich color pop (+saturation, +contrast)"; isPreset: true }
+                    }
+                    highlight: Rectangle { color: "#2dd4bf"; opacity: 0.25; radius: 4 }
+                    delegate: ItemDelegate {
+                        width: effectList.width
+                        highlighted: ListView.isCurrentItem
+                        visible: name.toLowerCase().indexOf(search.text.toLowerCase()) >= 0
+                        height: visible ? 54 : 0
+                        onClicked: effectList.currentIndex = index
+                        onDoubleClicked: applyCurrentEffect()
+                        contentItem: ColumnLayout {
+                            spacing: 2
+                            Label { text: name; font.bold: true }
+                            Label { text: desc; opacity: 0.6; font.pointSize: 8 }
+                        }
+                    }
+                }
+                Button {
+                    text: "Apply Effect to Clip"
+                    highlighted: true
+                    Layout.fillWidth: true
+                    enabled: effectList.currentIndex >= 0 && selection.selectedClipId !== ""
+                    onClicked: applyCurrentEffect()
+                }
+            }
+        }
+    }
+
+    function applyCurrentEffect() {
+        if (effectList.currentIndex < 0 || selection.selectedClipId === "")
+            return
+        var item = effectList.model.get(effectList.currentIndex)
+        if (item.isPreset) {
+            if (item.typeName === "preset_warm") {
+                session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.15, 1.1, 0.3, 0.05)
+            } else if (item.typeName === "preset_cool") {
+                session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.15, 0.95, -0.3, -0.05)
+            } else if (item.typeName === "preset_bw") {
+                session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.2, 0.0, 0.0, 0.0)
+            } else if (item.typeName === "preset_vibrant") {
+                session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.2, 1.45, 0.05, 0.0)
+            }
+        } else {
+            session.addClipEffect(selection.selectedClipId, item.typeName)
         }
     }
 
