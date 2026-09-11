@@ -21,6 +21,15 @@ const char* toString(TrackKind k) noexcept {
     return "video";
 }
 
+const char* toString(TransitionAlignment a) noexcept {
+    switch (a) {
+    case TransitionAlignment::CenterOnCut: return "center";
+    case TransitionAlignment::StartOnCut: return "start";
+    case TransitionAlignment::EndOnCut: return "end";
+    }
+    return "center";
+}
+
 Result<AssetKind> assetKindFromString(const std::string& s) {
     if (s == "video") {
         return Result<AssetKind>::ok(AssetKind::Video);
@@ -50,9 +59,25 @@ Result<TrackKind> trackKindFromString(const std::string& s) {
     return Result<TrackKind>::fail("unknown track kind: " + s);
 }
 
+Result<TransitionAlignment> transitionAlignmentFromString(const std::string& s) {
+    if (s == "center") {
+        return Result<TransitionAlignment>::ok(TransitionAlignment::CenterOnCut);
+    }
+    if (s == "start") {
+        return Result<TransitionAlignment>::ok(TransitionAlignment::StartOnCut);
+    }
+    if (s == "end") {
+        return Result<TransitionAlignment>::ok(TransitionAlignment::EndOnCut);
+    }
+    return Result<TransitionAlignment>::fail("unknown transition alignment: " + s);
+}
+
 Result<void> Clip::validate(const Asset* assetOrNull) const {
     if (id.empty()) {
         return Result<void>::fail("clip id is empty");
+    }
+    if (opacity < 0.0 || opacity > 1.0) {
+        return Result<void>::fail("clip opacity must be in [0, 1] (clip " + id + ")");
     }
     if (!(sourceIn < sourceOut)) {
         return Result<void>::fail("clip sourceIn must be < sourceOut (clip " + id + ")");
@@ -73,6 +98,26 @@ Result<void> Clip::validate(const Asset* assetOrNull) const {
         return Result<void>::fail("clip references missing asset " + assetId);
     }
     return Result<void>::ok();
+}
+
+TimeRange Transition::timeRange(const Clip& fromClip, const Clip& /*toClip*/) const {
+    const Rational cut = fromClip.seqEnd();
+    Rational start = cut;
+    switch (alignment) {
+    case TransitionAlignment::CenterOnCut:
+        start = cut - (duration / 2);
+        break;
+    case TransitionAlignment::StartOnCut:
+        start = cut;
+        break;
+    case TransitionAlignment::EndOnCut:
+        start = cut - duration;
+        break;
+    }
+    if (start.isNegative()) {
+        start = Rational(0);
+    }
+    return TimeRange{start, duration};
 }
 
 const Track* Sequence::findTrack(const Id& trackId) const {
@@ -103,6 +148,43 @@ Clip* Sequence::findClip(const Id& clipId) {
     return it == clips.end() ? nullptr : &it->second;
 }
 
+const Transition* Sequence::findTransition(const Id& transId) const {
+    for (const auto& tr : transitions) {
+        if (tr.id == transId) {
+            return &tr;
+        }
+    }
+    return nullptr;
+}
+
+Transition* Sequence::findTransition(const Id& transId) {
+    for (auto& tr : transitions) {
+        if (tr.id == transId) {
+            return &tr;
+        }
+    }
+    return nullptr;
+}
+
+bool Sequence::removeTransition(const Id& transId) {
+    for (auto it = transitions.begin(); it != transitions.end(); ++it) {
+        if (it->id == transId) {
+            transitions.erase(it);
+            return true;
+        }
+    }
+    return false;
+}
+
+const Transition* Sequence::findTransitionForClips(const Id& fromClipId, const Id& toClipId) const {
+    for (const auto& tr : transitions) {
+        if (tr.fromClipId == fromClipId && tr.toClipId == toClipId) {
+            return &tr;
+        }
+    }
+    return nullptr;
+}
+
 Result<void> Sequence::validate(const std::map<Id, Asset>& assets) const {
     if (id.empty()) {
         return Result<void>::fail("sequence id is empty");
@@ -131,6 +213,26 @@ Result<void> Sequence::validate(const std::map<Id, Asset>& assets) const {
             if (const auto r = clip.validate(asset); r.isErr()) {
                 return r;
             }
+        }
+    }
+    for (const auto& trans : transitions) {
+        if (trans.id.empty()) {
+            return Result<void>::fail("transition id is empty");
+        }
+        if (!(trans.duration.num() > 0)) {
+            return Result<void>::fail("transition duration must be positive");
+        }
+        const Track* tr = findTrack(trans.trackId);
+        if (tr == nullptr) {
+            return Result<void>::fail("transition " + trans.id + " references missing track " + trans.trackId);
+        }
+        const Clip* from = findClip(trans.fromClipId);
+        const Clip* to = findClip(trans.toClipId);
+        if (from == nullptr) {
+            return Result<void>::fail("transition " + trans.id + " references missing fromClip " + trans.fromClipId);
+        }
+        if (to == nullptr) {
+            return Result<void>::fail("transition " + trans.id + " references missing toClip " + trans.toClipId);
         }
     }
     return Result<void>::ok();

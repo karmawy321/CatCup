@@ -16,15 +16,18 @@
 
 namespace editor::core {
 
-inline constexpr int kCurrentSchemaVersion = 1;
+inline constexpr int kCurrentSchemaVersion = 2;
 
 enum class AssetKind { Video, Audio, Image, Text };
 enum class TrackKind { Video, Audio, Text };
+enum class TransitionAlignment { CenterOnCut, StartOnCut, EndOnCut };
 
 [[nodiscard]] const char* toString(AssetKind k) noexcept;
 [[nodiscard]] const char* toString(TrackKind k) noexcept;
+[[nodiscard]] const char* toString(TransitionAlignment a) noexcept;
 Result<AssetKind> assetKindFromString(const std::string& s);
 Result<TrackKind> trackKindFromString(const std::string& s);
+Result<TransitionAlignment> transitionAlignmentFromString(const std::string& s);
 
 struct Asset {
     Id id;
@@ -46,6 +49,20 @@ struct Effect {
     std::map<std::string, std::string> strParams;
 };
 
+struct Transition {
+    Id id;
+    std::string type = "crossfade";
+    Id trackId;
+    Id fromClipId;
+    Id toClipId;
+    Rational duration{1, 1}; // canonical length in seconds
+    TransitionAlignment alignment = TransitionAlignment::CenterOnCut;
+    std::string easing = "linear";
+    std::map<std::string, double> params;
+
+    [[nodiscard]] TimeRange timeRange(const struct Clip& fromClip, const struct Clip& toClip) const;
+};
+
 struct Transform {
     double scale = 1.0;
     double x = 0.0;
@@ -61,6 +78,7 @@ struct Clip {
     Rational sourceOut{0}; // exclusive; must satisfy sourceIn < sourceOut
     Rational seqStart{0};  // placement on the sequence timeline
     bool enabled = true;
+    double opacity = 1.0;
     Transform transform{};
     std::vector<Effect> effects;
     // Text payload (Stage 1 title). Stays here so preview/export share it.
@@ -96,11 +114,16 @@ struct Sequence {
     std::int64_t height = 720;
     std::vector<Track> tracks;
     std::map<Id, Clip> clips; // clip id -> clip (placement lives here)
+    std::vector<Transition> transitions;
 
     [[nodiscard]] const Track* findTrack(const Id& trackId) const;
     Track* findTrack(const Id& trackId);
     [[nodiscard]] const Clip* findClip(const Id& clipId) const;
     Clip* findClip(const Id& clipId);
+    [[nodiscard]] const Transition* findTransition(const Id& transId) const;
+    Transition* findTransition(const Id& transId);
+    bool removeTransition(const Id& transId);
+    [[nodiscard]] const Transition* findTransitionForClips(const Id& fromClipId, const Id& toClipId) const;
     [[nodiscard]] Result<void> validate(const std::map<Id, Asset>& assets) const;
 };
 

@@ -22,5 +22,12 @@ std::unique_ptr<ICommand> makeSetTransformCommand(const core::Id& clipId,
 /// Replace a title clip's text payload (text, font, size stay undoable).
 std::unique_ptr<ICommand> makeSetTextCommand(const core::Id& clipId, std::string text,
                                              std::string fontFamily, double fontSizePt);
+/// Ripple-delete clipId: deletes the clip and shifts all subsequent clips on the track left by its duration.
+std::unique_ptr<ICommand> makeRippleDeleteClipCommand(const core::Id& trackId, const core::Id& clipId);
+/// Ripple-trim clipId: trims the clip and shifts all subsequent clips on the track by the duration change.
+std::unique_ptr<ICommand> makeRippleTrimClipCommand(const core::Id& clipId, core::Rational newIn,
+                                                    core::Rational newOut, core::Rational newStart);
+/// Set clip opacity in [0.0, 1.0].
+std::unique_ptr<ICommand> makeSetOpacityCommand(const core::Id& clipId, double opacity);
 
 } // namespace editor::commands

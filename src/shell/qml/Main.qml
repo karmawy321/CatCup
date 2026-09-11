@@ -53,6 +53,9 @@ ApplicationWindow {
         if (selection.selectedClipId !== "") {
             session.deleteClip(selection.selectedClipId)
             selection.clearSelection()
+        } else if (selection.selectedTransitionId !== "") {
+            session.removeTransition(selection.selectedTransitionId)
+            selection.clearSelection()
         }
     }
 

@@ -5,17 +5,31 @@ namespace editor::shell {
 Selection::Selection(QObject* parent) : QObject(parent) {}
 
 void Selection::select(const QString& clipId) {
+    setSelectedTransitionId({});
     setSelectedClipId(clipId);
+}
+
+void Selection::selectTransition(const QString& transId) {
+    setSelectedClipId({});
+    setSelectedTransitionId(transId);
 }
 
 void Selection::clearSelection() {
     setSelectedClipId({});
+    setSelectedTransitionId({});
 }
 
 void Selection::setSelectedClipId(const QString& id) {
     if (selectedClipId_ != id) {
         selectedClipId_ = id;
         emit selectionChanged();
+    }
+}
+
+void Selection::setSelectedTransitionId(const QString& id) {
+    if (selectedTransitionId_ != id) {
+        selectedTransitionId_ = id;
+        emit transitionSelectionChanged();
     }
 }
 

@@ -65,6 +65,7 @@ void TimelineModel::refresh() {
     beginResetModel();
     rows_.clear();
     tracks_.clear();
+    transitions_.clear();
     durationSec_ = 0.0;
     fps_ = 30.0;
     if (session_ != nullptr) {
@@ -95,6 +96,28 @@ void TimelineModel::refresh() {
                     r.displayText = !c.text.empty() ? QString::fromStdString(c.text) : r.name;
                     rows_.push_back(std::move(r));
                 }
+            }
+            for (const auto& tr : seq->transitions) {
+                QVariantMap trm;
+                trm["id"] = QString::fromStdString(tr.id);
+                trm["trackId"] = QString::fromStdString(tr.trackId);
+                trm["fromClipId"] = QString::fromStdString(tr.fromClipId);
+                trm["toClipId"] = QString::fromStdString(tr.toClipId);
+                trm["type"] = QString::fromStdString(tr.type);
+                trm["durationSec"] = static_cast<double>(tr.duration);
+                trm["alignment"] = QString::fromStdString(core::toString(tr.alignment));
+                trm["easing"] = QString::fromStdString(tr.easing);
+                const auto* from = seq->findClip(tr.fromClipId);
+                const auto* to = seq->findClip(tr.toClipId);
+                if (from != nullptr && to != nullptr) {
+                    const auto range = tr.timeRange(*from, *to);
+                    trm["startSec"] = static_cast<double>(range.start);
+                    trm["rangeDurationSec"] = static_cast<double>(range.duration);
+                } else {
+                    trm["startSec"] = 0.0;
+                    trm["rangeDurationSec"] = static_cast<double>(tr.duration);
+                }
+                transitions_.push_back(trm);
             }
         }
     }
@@ -140,6 +163,7 @@ QVariantMap TimelineModel::clipInfo(const QString& clipId) const {
     m["startSec"] = static_cast<double>(clip->seqStart);
     m["durationSec"] = static_cast<double>(clip->seqDuration());
     m["sourceInSec"] = static_cast<double>(clip->sourceIn);
+    m["opacity"] = clip->opacity;
     m["text"] = QString::fromStdString(clip->text);
     m["fontFamily"] = QString::fromStdString(clip->fontFamily);
     m["fontSizePt"] = clip->fontSizePt;
@@ -148,6 +172,57 @@ QVariantMap TimelineModel::clipInfo(const QString& clipId) const {
     m["y"] = clip->transform.y;
     m["rotation"] = clip->transform.rotationDeg;
     return m;
+}
+
+QVariantMap TimelineModel::transitionInfo(const QString& transId) const {
+    QVariantMap m;
+    if (session_ == nullptr) {
+        return m;
+    }
+    const core::Sequence* seq = session_->project().activeSequence();
+    if (seq == nullptr) {
+        return m;
+    }
+    const core::Transition* tr = seq->findTransition(transId.toStdString());
+    if (tr == nullptr) {
+        return m;
+    }
+    m["id"] = transId;
+    m["trackId"] = QString::fromStdString(tr->trackId);
+    m["fromClipId"] = QString::fromStdString(tr->fromClipId);
+    m["toClipId"] = QString::fromStdString(tr->toClipId);
+    m["type"] = QString::fromStdString(tr->type);
+    m["durationSec"] = static_cast<double>(tr->duration);
+    m["alignment"] = QString::fromStdString(core::toString(tr->alignment));
+    m["easing"] = QString::fromStdString(tr->easing);
+    const auto* from = seq->findClip(tr->fromClipId);
+    const auto* to = seq->findClip(tr->toClipId);
+    if (from != nullptr && to != nullptr) {
+        const auto range = tr->timeRange(*from, *to);
+        m["startSec"] = static_cast<double>(range.start);
+        m["rangeDurationSec"] = static_cast<double>(range.duration);
+    }
+    return m;
+}
+
+QString TimelineModel::adjacentClipId(const QString& clipId, bool next) const {
+    if (session_ == nullptr) return {};
+    const core::Sequence* seq = session_->project().activeSequence();
+    if (seq == nullptr) return {};
+    const std::string cid = clipId.toStdString();
+    for (const auto& track : seq->tracks) {
+        for (size_t i = 0; i < track.clipIds.size(); ++i) {
+            if (track.clipIds[i] == cid) {
+                if (next && i + 1 < track.clipIds.size()) {
+                    return QString::fromStdString(track.clipIds[i + 1]);
+                } else if (!next && i > 0) {
+                    return QString::fromStdString(track.clipIds[i - 1]);
+                }
+                return {};
+            }
+        }
+    }
+    return {};
 }
 
 } // namespace editor::shell

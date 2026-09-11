@@ -2,6 +2,7 @@
 
 #include "commands/ClipCommands.hpp"
 #include "commands/Command.hpp"
+#include "commands/TransitionCommands.hpp"
 #include "core/Model.hpp"
 
 using namespace editor;
@@ -162,6 +163,122 @@ TEST_CASE("commands: set text is undoable") {
     CHECK_EQ(p.sequences.front().clips.at("t1").text, std::string("after"));
     CHECK(undo.undo(p));
     CHECK_EQ(p.sequences.front().clips.at("t1").text, std::string("before"));
+}
+
+TEST_CASE("commands: set opacity is undoable and clamped") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", makeClip("c1")), p, error));
+    CHECK(undo.execute(commands::makeSetOpacityCommand("c1", 0.35), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").opacity, 0.35);
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").opacity, 1.0);
+    CHECK(undo.redo(p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").opacity, 0.35);
+}
+
+TEST_CASE("commands: ripple delete closes timeline gap") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+    core::Clip c1 = makeClip("c1");
+    c1.seqStart = core::Rational(0);
+    c1.sourceOut = core::Rational(3, 1);
+    core::Clip c2 = makeClip("c2");
+    c2.seqStart = core::Rational(3, 1);
+    c2.sourceOut = core::Rational(5, 1);
+    core::Clip c3 = makeClip("c3");
+    c3.seqStart = core::Rational(8, 1);
+    c3.sourceOut = core::Rational(4, 1);
+
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c1), p, error));
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c2), p, error));
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c3), p, error));
+
+    // Ripple delete c2 (duration 5s). c3 was at 8s, should shift left by 5s to 3s.
+    CHECK(undo.execute(commands::makeRippleDeleteClipCommand("track-1", "c2"), p, error));
+    CHECK_EQ(p.sequences.front().clips.count("c2"), 0);
+    CHECK_EQ(p.sequences.front().clips.at("c3").seqStart, core::Rational(3, 1));
+
+    // Undo restores c2 and c3's position at 8s
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.count("c2"), 1);
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(3, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c3").seqStart, core::Rational(8, 1));
+}
+
+TEST_CASE("commands: ripple trim shifts following clips by delta") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+    core::Clip c1 = makeClip("c1");
+    c1.seqStart = core::Rational(0);
+    c1.sourceOut = core::Rational(4, 1); // duration 4s
+    core::Clip c2 = makeClip("c2");
+    c2.seqStart = core::Rational(4, 1);
+    c2.sourceOut = core::Rational(4, 1);
+
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c1), p, error));
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c2), p, error));
+
+    // Shorten c1 from 4s to 2s via ripple trim. c2 should shift from 4s to 2s.
+    CHECK(undo.execute(commands::makeRippleTrimClipCommand("c1", core::Rational(0), core::Rational(2, 1), core::Rational(0)), p, error));
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqDuration(), core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(2, 1));
+
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().clips.at("c1").seqDuration(), core::Rational(4, 1));
+    CHECK_EQ(p.sequences.front().clips.at("c2").seqStart, core::Rational(4, 1));
+}
+
+TEST_CASE("commands: transition add, update, remove, and cascade delete") {
+    core::Project p = makeProject();
+    commands::UndoStack undo(10);
+    std::string error;
+    core::Clip c1 = makeClip("c1");
+    c1.seqStart = core::Rational(0);
+    c1.sourceOut = core::Rational(4, 1);
+    core::Clip c2 = makeClip("c2");
+    c2.seqStart = core::Rational(4, 1);
+    c2.sourceOut = core::Rational(4, 1);
+
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c1), p, error));
+    CHECK(undo.execute(commands::makeAddClipCommand("track-1", c2), p, error));
+
+    core::Transition tr;
+    tr.id = "tr1";
+    tr.trackId = "track-1";
+    tr.fromClipId = "c1";
+    tr.toClipId = "c2";
+    tr.type = "crossfade";
+    tr.duration = core::Rational(1, 1);
+    tr.alignment = core::TransitionAlignment::CenterOnCut;
+
+    // Add transition
+    CHECK(undo.execute(commands::makeAddTransitionCommand(tr), p, error));
+    CHECK_EQ(p.sequences.front().transitions.size(), 1);
+
+    // Update transition
+    CHECK(undo.execute(commands::makeUpdateTransitionCommand("tr1", core::Rational(2, 1), core::TransitionAlignment::StartOnCut, "dip_black", "linear"), p, error));
+    CHECK_EQ(p.sequences.front().transitions.front().duration, core::Rational(2, 1));
+    CHECK_EQ(p.sequences.front().transitions.front().type, std::string("dip_black"));
+
+    // Remove transition
+    CHECK(undo.execute(commands::makeRemoveTransitionCommand("tr1"), p, error));
+    CHECK_EQ(p.sequences.front().transitions.size(), 0);
+
+    // Undo remove
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().transitions.size(), 1);
+
+    // Removing a clip that has an attached transition cleans up the transition
+    CHECK(undo.execute(commands::makeRemoveClipCommand("track-1", "c1"), p, error));
+    CHECK_EQ(p.sequences.front().transitions.size(), 0);
+
+    // Undo restoring the clip also restores its transition
+    CHECK(undo.undo(p));
+    CHECK_EQ(p.sequences.front().transitions.size(), 1);
 }
 
 int main() {

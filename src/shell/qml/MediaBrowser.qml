@@ -21,6 +21,7 @@ Pane {
             Layout.fillWidth: true
             TabButton { text: "Media" }
             TabButton { text: "Text" }
+            TabButton { text: "Transitions" }
         }
 
         TextField {
@@ -113,6 +114,49 @@ Pane {
                 }
                 Item { Layout.fillHeight: true }
             }
+
+            // ---- Transitions tab
+            ColumnLayout {
+                spacing: 8
+                Label { text: "Select a transition to apply between clips or to selected clip."; opacity: 0.7; font.pointSize: 8; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                ListView {
+                    id: transitionList
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    spacing: 6
+                    model: ListModel {
+                        ListElement { name: "Crossfade"; typeName: "crossfade"; desc: "Smooth linear cross-dissolve" }
+                        ListElement { name: "Dip to Black"; typeName: "dip_black"; desc: "Fade through black color" }
+                        ListElement { name: "Dip to White"; typeName: "dip_white"; desc: "Fade through white flash" }
+                        ListElement { name: "Wipe Left"; typeName: "wipe_left"; desc: "Horizontal wipe to the left" }
+                        ListElement { name: "Wipe Right"; typeName: "wipe_right"; desc: "Horizontal wipe to the right" }
+                        ListElement { name: "Wipe Up"; typeName: "wipe_up"; desc: "Vertical wipe sliding up" }
+                        ListElement { name: "Wipe Down"; typeName: "wipe_down"; desc: "Vertical wipe sliding down" }
+                    }
+                    highlight: Rectangle { color: "#2dd4bf"; opacity: 0.25; radius: 4 }
+                    delegate: ItemDelegate {
+                        width: transitionList.width
+                        highlighted: ListView.isCurrentItem
+                        visible: name.toLowerCase().indexOf(search.text.toLowerCase()) >= 0
+                        height: visible ? 54 : 0
+                        onClicked: transitionList.currentIndex = index
+                        onDoubleClicked: applyCurrentTransition()
+                        contentItem: ColumnLayout {
+                            spacing: 2
+                            Label { text: name; font.bold: true }
+                            Label { text: desc; opacity: 0.6; font.pointSize: 8 }
+                        }
+                    }
+                }
+                Button {
+                    text: "Apply Transition (1.0 s)"
+                    highlighted: true
+                    Layout.fillWidth: true
+                    enabled: transitionList.currentIndex >= 0 && selection.selectedClipId !== ""
+                    onClicked: applyCurrentTransition()
+                }
+            }
         }
     }
 
@@ -122,6 +166,29 @@ Pane {
         var id = session.addClipToTimeline(library.assetIdAt(mediaList.currentIndex))
         if (id !== "")
             selection.select(id)
+    }
+
+    function applyCurrentTransition() {
+        if (transitionList.currentIndex < 0 || selection.selectedClipId === "")
+            return
+        var item = transitionList.model.get(transitionList.currentIndex)
+        var clipInfo = timeline.clipInfo(selection.selectedClipId)
+        if (!clipInfo || !clipInfo.trackId)
+            return
+
+        var nextClip = timeline.adjacentClipId(selection.selectedClipId, true)
+        var prevClip = timeline.adjacentClipId(selection.selectedClipId, false)
+        var fromId = selection.selectedClipId
+        var toId = nextClip
+        if (toId === "" && prevClip !== "") {
+            fromId = prevClip
+            toId = selection.selectedClipId
+        }
+
+        var transId = session.addTransition(clipInfo.trackId, fromId, toId, item.typeName, 1.0, 0)
+        if (transId !== "") {
+            selection.selectTransition(transId)
+        }
     }
 
     FileDialog {

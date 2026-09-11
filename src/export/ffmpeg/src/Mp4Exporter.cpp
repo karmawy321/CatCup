@@ -190,6 +190,143 @@ struct ClipReader {
     }
 };
 
+void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::PlacedClip& layer,
+                         const media_ffmpeg::DecodedVideoFrame* frameA,
+                         const media_ffmpeg::DecodedVideoFrame* frameB) {
+    if (frameA == nullptr && frameB == nullptr) {
+        return;
+    }
+    // Fast path: untransformed, opaque single frame without transition (preserves Stage 1 exact bytes)
+    if (!layer.inTransition && layer.transform.scale == 1.0 && layer.transform.x == 0.0 &&
+        layer.transform.y == 0.0 && layer.opacity >= 0.99999 && frameA != nullptr &&
+        frameA->width > 0 && frameA->height > 0) {
+        const int copyW = (std::min)(frameA->width, canvasW);
+        const int copyH = (std::min)(frameA->height, canvasH);
+        const int dstX = (canvasW - copyW) / 2;
+        const int dstY = (canvasH - copyH) / 2;
+        const int srcX = (frameA->width - copyW) / 2;
+        const int srcY = (frameA->height - copyH) / 2;
+        for (int y = 0; y < copyH; ++y) {
+            std::memcpy(dst->data[0] + (dstY + y) * dst->linesize[0] + dstX * 4,
+                        frameA->rgba.data() +
+                            static_cast<size_t>(srcY + y) * frameA->width * 4 + srcX * 4,
+                        static_cast<size_t>(copyW) * 4);
+        }
+        return;
+    }
+
+    const int wA = frameA ? frameA->width : (frameB ? frameB->width : canvasW);
+    const int hA = frameA ? frameA->height : (frameB ? frameB->height : canvasH);
+    if (wA <= 0 || hA <= 0) return;
+
+    double aspect = static_cast<double>(wA) / static_cast<double>(hA);
+    double canvasAspect = static_cast<double>(canvasW) / static_cast<double>(canvasH);
+    int fitW = canvasW, fitH = canvasH;
+    if (aspect > canvasAspect) {
+        fitH = (std::max)(1, static_cast<int>(canvasW / aspect));
+    } else {
+        fitW = (std::max)(1, static_cast<int>(canvasH * aspect));
+    }
+    fitW = (std::max)(1, static_cast<int>(fitW * layer.transform.scale));
+    fitH = (std::max)(1, static_cast<int>(fitH * layer.transform.scale));
+    int startX = (canvasW - fitW) / 2 + static_cast<int>(layer.transform.x);
+    int startY = (canvasH - fitH) / 2 + static_cast<int>(layer.transform.y);
+    double alpha = std::clamp(layer.opacity, 0.0, 1.0);
+    const double bf = std::clamp(layer.blendFactor, 0.0, 1.0);
+
+    for (int y = 0; y < fitH; ++y) {
+        int dstY = startY + y;
+        if (dstY < 0 || dstY >= canvasH) continue;
+        uint8_t* dstRow = dst->data[0] + dstY * dst->linesize[0];
+
+        for (int x = 0; x < fitW; ++x) {
+            int dstX = startX + x;
+            if (dstX < 0 || dstX >= canvasW) continue;
+
+            uint8_t rA = 0, gA = 0, bA = 0, aA = 0;
+            if (frameA && frameA->width > 0 && frameA->height > 0) {
+                int srcXA = std::clamp(static_cast<int>(static_cast<double>(x) * frameA->width / fitW), 0, frameA->width - 1);
+                int srcYA = std::clamp(static_cast<int>(static_cast<double>(y) * frameA->height / fitH), 0, frameA->height - 1);
+                const uint8_t* pA = frameA->rgba.data() + (srcYA * frameA->width + srcXA) * 4;
+                rA = pA[0]; gA = pA[1]; bA = pA[2]; aA = pA[3];
+            }
+
+            uint8_t rB = 0, gB = 0, bB = 0, aB = 0;
+            if (frameB && frameB->width > 0 && frameB->height > 0) {
+                int srcXB = std::clamp(static_cast<int>(static_cast<double>(x) * frameB->width / fitW), 0, frameB->width - 1);
+                int srcYB = std::clamp(static_cast<int>(static_cast<double>(y) * frameB->height / fitH), 0, frameB->height - 1);
+                const uint8_t* pB = frameB->rgba.data() + (srcYB * frameB->width + srcXB) * 4;
+                rB = pB[0]; gB = pB[1]; bB = pB[2]; aB = pB[3];
+            }
+
+            double rPix = rA, gPix = gA, bPix = bA, aPix = aA;
+
+            if (layer.inTransition) {
+                if (layer.transitionType == "crossfade") {
+                    rPix = rA * (1.0 - bf) + rB * bf;
+                    gPix = gA * (1.0 - bf) + gB * bf;
+                    bPix = bA * (1.0 - bf) + bB * bf;
+                    aPix = aA * (1.0 - bf) + aB * bf;
+                } else if (layer.transitionType == "dip_black") {
+                    if (bf < 0.5) {
+                        double f = 1.0 - 2.0 * bf;
+                        rPix = rA * f; gPix = gA * f; bPix = bA * f; aPix = aA * f;
+                    } else {
+                        double f = 2.0 * (bf - 0.5);
+                        rPix = rB * f; gPix = gB * f; bPix = bB * f; aPix = aB * f;
+                    }
+                } else if (layer.transitionType == "dip_white") {
+                    if (bf < 0.5) {
+                        double f = 2.0 * bf;
+                        rPix = rA * (1.0 - f) + 255.0 * f;
+                        gPix = gA * (1.0 - f) + 255.0 * f;
+                        bPix = bA * (1.0 - f) + 255.0 * f;
+                        aPix = aA * (1.0 - f) + 255.0 * f;
+                    } else {
+                        double f = 2.0 * (bf - 0.5);
+                        rPix = 255.0 * (1.0 - f) + rB * f;
+                        gPix = 255.0 * (1.0 - f) + gB * f;
+                        bPix = 255.0 * (1.0 - f) + bB * f;
+                        aPix = 255.0 * (1.0 - f) + aB * f;
+                    }
+                } else if (layer.transitionType == "wipe_left") {
+                    int splitX = static_cast<int>(fitW * (1.0 - bf));
+                    if (x >= splitX) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "wipe_right") {
+                    int splitX = static_cast<int>(fitW * bf);
+                    if (x < splitX) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "wipe_up") {
+                    int splitY = static_cast<int>(fitH * (1.0 - bf));
+                    if (y >= splitY) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "wipe_down") {
+                    int splitY = static_cast<int>(fitH * bf);
+                    if (y < splitY) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else {
+                    rPix = rA * (1.0 - bf) + rB * bf;
+                    gPix = gA * (1.0 - bf) + gB * bf;
+                    bPix = bA * (1.0 - bf) + bB * bf;
+                    aPix = aA * (1.0 - bf) + aB * bf;
+                }
+            }
+
+            uint8_t* dp = dstRow + dstX * 4;
+            double a = (aPix / 255.0) * alpha;
+            dp[0] = static_cast<uint8_t>(std::clamp(rPix * a + dp[0] * (1.0 - a), 0.0, 255.0));
+            dp[1] = static_cast<uint8_t>(std::clamp(gPix * a + dp[1] * (1.0 - a), 0.0, 255.0));
+            dp[2] = static_cast<uint8_t>(std::clamp(bPix * a + dp[2] * (1.0 - a), 0.0, 255.0));
+            dp[3] = 255;
+        }
+    }
+}
+
 } // namespace
 
 core::Result<void> Mp4Exporter::run(const core::Project& project,
@@ -449,9 +586,6 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
             }
             audioSpans.push_back(AudioSpan{it->second.seqStart, it->second});
         }
-        if (!audioSpans.empty()) {
-            break; // S1: first audible audio track (mixing is Stage 2)
-        }
     }
     std::sort(audioSpans.begin(), audioSpans.end(), [](const AudioSpan& a, const AudioSpan& b) {
         return a.seqStart < b.seqStart;
@@ -523,32 +657,7 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
         }
         const core::Rational t = core::Rational::fromFrames(i, seq->fps);
         const render::FramePlan plan = render::Evaluator::evaluateVideoAt(*seq, t);
-        // Topmost video layer wins in S1 (documented; blend arrives in S2).
-        const render::PlacedClip* videoLayer = nullptr;
-        for (const auto& layer : plan.layers) {
-            if (layer.trackKind == core::TrackKind::Video && !layer.assetId.empty()) {
-                videoLayer = &layer;
-            }
-        }
-        media_ffmpeg::DecodedVideoFrame decoded;
-        bool havePicture = false;
-        if (videoLayer != nullptr) {
-            ClipReader& reader = readers[videoLayer->assetId];
-            if (!reader.ready) {
-                reader.assetPath = assetPath(videoLayer->assetId);
-            }
-            const auto& asset = project.assets.at(videoLayer->assetId);
-            auto got = reader.at(videoLayer->sourceTime, asset.fps);
-            if (got.isOk()) {
-                decoded = std::move(got.value());
-                havePicture = true;
-            } else if (got.error() != "eof") {
-                videoError = "decode failed at frame " + std::to_string(i) + ": " + got.error();
-                videoFailed = true;
-                break;
-            }
-            // "eof" at the tail (rounding): hold black; never abort the file.
-        }
+
         // Push RGBA (or black) into the graph; titles composite inside.
         AVFrame* src = av_frame_alloc();
         src->format = AV_PIX_FMT_RGBA;
@@ -567,22 +676,55 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
             std::memset(src->data[0] + y * src->linesize[0], 0,
                         static_cast<size_t>(canvasW) * 4);
         }
-        if (havePicture && decoded.width > 0 && decoded.height > 0) {
-            // Center-crop/pad the decoded picture into the canvas buffer
-            // (the scale filter also fits, but feeding exact canvas keeps
-            // the graph's live config stable).
-            const int copyW = (std::min)(decoded.width, canvasW);
-            const int copyH = (std::min)(decoded.height, canvasH);
-            const int dstX = (canvasW - copyW) / 2;
-            const int dstY = (canvasH - copyH) / 2;
-            const int srcX = (decoded.width - copyW) / 2;
-            const int srcY = (decoded.height - copyH) / 2;
-            for (int y = 0; y < copyH; ++y) {
-                std::memcpy(src->data[0] + (dstY + y) * src->linesize[0] + dstX * 4,
-                            decoded.rgba.data() +
-                                static_cast<size_t>(srcY + y) * decoded.width * 4 + srcX * 4,
-                            static_cast<size_t>(copyW) * 4);
+
+        for (const auto& layer : plan.layers) {
+            if (layer.trackKind != core::TrackKind::Video || layer.assetId.empty()) {
+                continue;
             }
+            media_ffmpeg::DecodedVideoFrame decodedA;
+            bool haveA = false;
+            {
+                ClipReader& readerA = readers[layer.assetId];
+                if (!readerA.ready) {
+                    readerA.assetPath = assetPath(layer.assetId);
+                }
+                const auto& asset = project.assets.at(layer.assetId);
+                auto got = readerA.at(layer.sourceTime, asset.fps);
+                if (got.isOk()) {
+                    decodedA = std::move(got.value());
+                    haveA = true;
+                } else if (got.error() != "eof") {
+                    videoError = "decode failed at frame " + std::to_string(i) + ": " + got.error();
+                    videoFailed = true;
+                    break;
+                }
+            }
+
+            media_ffmpeg::DecodedVideoFrame decodedB;
+            bool haveB = false;
+            if (layer.inTransition && !layer.secondaryAssetId.empty()) {
+                ClipReader& readerB = readers[layer.secondaryAssetId];
+                if (!readerB.ready) {
+                    readerB.assetPath = assetPath(layer.secondaryAssetId);
+                }
+                const auto& asset = project.assets.at(layer.secondaryAssetId);
+                auto got = readerB.at(layer.secondarySourceTime, asset.fps);
+                if (got.isOk()) {
+                    decodedB = std::move(got.value());
+                    haveB = true;
+                } else if (got.error() != "eof") {
+                    videoError = "decode failed at frame " + std::to_string(i) + ": " + got.error();
+                    videoFailed = true;
+                    break;
+                }
+            }
+
+            compositeVideoLayer(src, canvasW, canvasH, layer, haveA ? &decodedA : nullptr,
+                                haveB ? &decodedB : nullptr);
+        }
+        if (videoFailed) {
+            av_frame_free(&src);
+            break;
         }
         if (av_buffersrc_add_frame_flags(srcCtx, src, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
             av_frame_free(&src);
@@ -708,23 +850,13 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
             return true;
         };
 
-        core::Rational audioCursor{0};
+        const int64_t totalAudioSamples =
+            duration.toFramesRounded(core::Rational(48000, 1));
+        std::vector<float> mixTimeline(static_cast<size_t>(totalAudioSamples) * 2, 0.0f);
+
         for (const auto& span : audioSpans) {
             if (cancel.load() || audioFailed) {
                 break;
-            }
-            // Silence gap before this span.
-            if (audioCursor < span.seqStart) {
-                const int64_t gapSamples =
-                    (span.seqStart - audioCursor)
-                        .toFramesRounded(core::Rational(48000, 1));
-                std::vector<int16_t> silence(static_cast<size_t>(gapSamples) * 2, 0);
-                if (!feedS16(silence.data(), static_cast<size_t>(gapSamples))) {
-                    audioError = "audio encode failed in gap";
-                    audioFailed = true;
-                    break;
-                }
-                audioCursor = span.seqStart;
             }
             const auto& asset = project.assets.at(span.clip.assetId);
             media_ffmpeg::AudioDecoder decoder;
@@ -734,8 +866,6 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                 break;
             }
             if (!decoder.hasAudio()) {
-                audioCursor = span.clip.seqEnd(); // treat as silence already fed? no—
-                // video-only asset on an audio track: advance cursor, no samples.
                 continue;
             }
             if (auto r = decoder.seek(span.clip.sourceIn); r.isErr()) {
@@ -743,8 +873,13 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                 audioFailed = true;
                 break;
             }
+            const int64_t spanStartSample =
+                span.seqStart.toFramesRounded(core::Rational(48000, 1));
             int64_t need =
                 span.clip.seqDuration().toFramesRounded(core::Rational(48000, 1));
+            int64_t sampleOffset = 0;
+            const float gain = static_cast<float>(span.clip.opacity);
+
             while (need > 0) {
                 if (cancel.load()) {
                     break;
@@ -753,7 +888,7 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                     decoder.nextChunk(static_cast<int>((std::min<int64_t>)(need, 4096)));
                 if (chunk.isErr()) {
                     if (chunk.error() == "eof") {
-                        break; // short source: pad with silence below
+                        break;
                     }
                     audioError = "audio decode failed: " + chunk.error();
                     audioFailed = true;
@@ -765,42 +900,40 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                     break;
                 }
                 const size_t use = static_cast<size_t>((std::min<int64_t>)(need, static_cast<int64_t>(got)));
-                if (!feedS16(chunk.value().pcm.data(), use)) {
-                    audioError = "audio encode failed";
-                    audioFailed = true;
-                    break;
+                const int16_t* pcm = chunk.value().pcm.data();
+                for (size_t s = 0; s < use; ++s) {
+                    int64_t timelineIdx = spanStartSample + sampleOffset + static_cast<int64_t>(s);
+                    if (timelineIdx >= 0 && timelineIdx < totalAudioSamples) {
+                        mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 0] +=
+                            static_cast<float>(pcm[s * 2 + 0]) * gain;
+                        mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 1] +=
+                            static_cast<float>(pcm[s * 2 + 1]) * gain;
+                    }
                 }
+                sampleOffset += static_cast<int64_t>(use);
                 need -= static_cast<int64_t>(use);
-                if (use < got) {
-                    break; // consumed enough
+            }
+        }
+
+        // Stream mixTimeline through feedS16 in blocks of frameSize
+        for (int64_t i = 0; i < totalAudioSamples && !audioFailed && !cancel.load(); i += frameSize) {
+            const size_t take = static_cast<size_t>((std::min<int64_t>)(frameSize, totalAudioSamples - i));
+            std::vector<int16_t> pcmBlock(take * 2);
+            for (size_t s = 0; s < take; ++s) {
+                for (int c = 0; c < 2; ++c) {
+                    float sample = mixTimeline[(static_cast<size_t>(i) + s) * 2 + static_cast<size_t>(c)];
+                    sample = std::clamp(sample, -32768.0f, 32767.0f);
+                    pcmBlock[s * 2 + static_cast<size_t>(c)] = static_cast<int16_t>(sample);
                 }
             }
-            if (audioFailed) {
+            if (!feedS16(pcmBlock.data(), take)) {
+                audioError = "audio encode failed";
+                audioFailed = true;
                 break;
             }
-            if (need > 0) { // short source: pad tail with silence
-                std::vector<int16_t> silence(static_cast<size_t>(need) * 2, 0);
-                if (!feedS16(silence.data(), static_cast<size_t>(need))) {
-                    audioError = "audio encode failed in tail pad";
-                    audioFailed = true;
-                    break;
-                }
-            }
-            audioCursor = span.clip.seqEnd();
-            // Display-only double conversion for progress (never persisted).
-            const double doneSec = static_cast<double>(audioCursor);
+            const double doneSec = static_cast<double>(i + static_cast<int64_t>(take)) / 48000.0;
             const double totalSec = static_cast<double>(duration);
             report(0.9 + (totalSec > 0 ? 0.1 * doneSec / totalSec : 0.1));
-        }
-        // Tail silence to sequence duration.
-        if (!audioFailed && !cancel.load() && audioCursor < duration) {
-            const int64_t tail =
-                (duration - audioCursor).toFramesRounded(core::Rational(48000, 1));
-            std::vector<int16_t> silence(static_cast<size_t>(tail) * 2, 0);
-            if (!feedS16(silence.data(), static_cast<size_t>(tail))) {
-                audioError = "audio encode failed in tail";
-                audioFailed = true;
-            }
         }
         if (fltpUsed > 0 && !audioFailed && !cancel.load()) {
             if (!flushAudioFrame(true)) {

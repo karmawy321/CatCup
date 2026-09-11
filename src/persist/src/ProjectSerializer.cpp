@@ -144,11 +144,30 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
                 {"sourceOut", rationalToJson(c.sourceOut)},
                 {"seqStart", rationalToJson(c.seqStart)},
                 {"enabled", JsonValue(c.enabled)},
+                {"opacity", JsonValue(c.opacity)},
                 {"transform", JsonValue(std::move(tr))},
                 {"effects", JsonValue(std::move(effects))},
                 {"text", JsonValue(c.text)},
                 {"fontFamily", JsonValue(c.fontFamily)},
                 {"fontSizePt", JsonValue(c.fontSizePt)},
+            }));
+        }
+        JsonArray transitions;
+        for (const auto& tr : seq.transitions) {
+            JsonObject params;
+            for (const auto& [k, v] : tr.params) {
+                params.emplace(k, JsonValue(v));
+            }
+            transitions.push_back(JsonValue(JsonObject{
+                {"id", JsonValue(tr.id)},
+                {"type", JsonValue(tr.type)},
+                {"trackId", JsonValue(tr.trackId)},
+                {"fromClipId", JsonValue(tr.fromClipId)},
+                {"toClipId", JsonValue(tr.toClipId)},
+                {"duration", rationalToJson(tr.duration)},
+                {"alignment", JsonValue(core::toString(tr.alignment))},
+                {"easing", JsonValue(tr.easing)},
+                {"params", JsonValue(std::move(params))},
             }));
         }
         sequences.push_back(JsonValue(JsonObject{
@@ -159,6 +178,7 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
             {"height", JsonValue(seq.height)},
             {"tracks", JsonValue(std::move(tracks))},
             {"clips", JsonValue(std::move(clips))},
+            {"transitions", JsonValue(std::move(transitions))},
         }));
     }
     return core::Result<JsonValue>::ok(JsonValue(JsonObject{
@@ -373,6 +393,11 @@ core::Result<core::Project> projectFromJson(const JsonValue& root) {
                     if (const auto f2 = co->find("enabled"); f2 != co->end() && f2->second.isBool()) {
                         c.enabled = f2->second.asBool();
                     }
+                    if (const auto f2 = co->find("opacity");
+                        f2 != co->end() && (f2->second.isDouble() || f2->second.isInt())) {
+                        c.opacity = f2->second.isDouble() ? f2->second.asDouble()
+                                                          : static_cast<double>(f2->second.asInt());
+                    }
                     if (const auto f2 = co->find("transform");
                         f2 != co->end() && f2->second.isObject()) {
                         const auto& tr = f2->second.asObject();
@@ -424,6 +449,53 @@ core::Result<core::Project> projectFromJson(const JsonValue& root) {
                                            : static_cast<double>(f2->second.asInt());
                     }
                     seq.clips.emplace(c.id, std::move(c));
+                }
+            }
+            if (const auto f = so->find("transitions"); f != so->end()) {
+                const JsonArray* tarr = requireArray(f->second, err);
+                if (tarr == nullptr) {
+                    return core::Result<core::Project>::fail("transitions: " + err);
+                }
+                for (const auto& tv : *tarr) {
+                    const JsonObject* to = requireObject(tv, err);
+                    if (to == nullptr) {
+                        return core::Result<core::Project>::fail("transition: " + err);
+                    }
+                    core::Transition tr;
+                    auto tid = requireString(*to, "id");
+                    if (tid.isErr()) return core::Result<core::Project>::fail(tid.error());
+                    tr.id = tid.value();
+                    if (const auto f2 = to->find("type"); f2 != to->end() && f2->second.isString()) {
+                        tr.type = f2->second.asString();
+                    }
+                    if (const auto f2 = to->find("trackId"); f2 != to->end() && f2->second.isString()) {
+                        tr.trackId = f2->second.asString();
+                    }
+                    if (const auto f2 = to->find("fromClipId"); f2 != to->end() && f2->second.isString()) {
+                        tr.fromClipId = f2->second.asString();
+                    }
+                    if (const auto f2 = to->find("toClipId"); f2 != to->end() && f2->second.isString()) {
+                        tr.toClipId = f2->second.asString();
+                    }
+                    if (const auto f2 = to->find("duration"); f2 != to->end()) {
+                        auto r = rationalFromJson(f2->second, "transition.duration");
+                        if (r.isErr()) return core::Result<core::Project>::fail(r.error());
+                        tr.duration = r.value();
+                    }
+                    if (const auto f2 = to->find("alignment"); f2 != to->end() && f2->second.isString()) {
+                        auto a = core::transitionAlignmentFromString(f2->second.asString());
+                        if (a.isOk()) tr.alignment = a.value();
+                    }
+                    if (const auto f2 = to->find("easing"); f2 != to->end() && f2->second.isString()) {
+                        tr.easing = f2->second.asString();
+                    }
+                    if (const auto f2 = to->find("params"); f2 != to->end() && f2->second.isObject()) {
+                        for (const auto& [k, pv] : f2->second.asObject()) {
+                            if (pv.isDouble()) tr.params[k] = pv.asDouble();
+                            else if (pv.isInt()) tr.params[k] = static_cast<double>(pv.asInt());
+                        }
+                    }
+                    seq.transitions.push_back(std::move(tr));
                 }
             }
             project.sequences.push_back(std::move(seq));

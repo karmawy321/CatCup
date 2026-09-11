@@ -20,6 +20,17 @@ struct PlacedClip {
     core::Rational sourceTime{0}; // evaluated source position for this frame
     int zOrder = 0;               // track order, then clip order within track
     bool isText = false;
+    core::Transform transform{};
+    double opacity = 1.0;
+
+    // Transition blend slot (Stage 2)
+    bool inTransition = false;
+    core::Id transitionId;
+    std::string transitionType;
+    core::Id secondaryClipId;
+    core::Id secondaryAssetId;
+    core::Rational secondarySourceTime{0};
+    double blendFactor = 0.0; // 0.0 = primary/outgoing, 1.0 = secondary/incoming
 };
 
 struct FramePlan {

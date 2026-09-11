@@ -183,9 +183,68 @@ TEST_CASE("migrations: v0 fps double migrates to rational") {
     });
     auto version = persist::migrateDocument(doc);
     CHECK(version.isOk());
-    CHECK_EQ(version.value(), 1);
+    CHECK_EQ(version.value(), 2);
     auto project = persist::projectFromJson(doc);
     CHECK(project.isOk());
+}
+
+TEST_CASE("serialize: Stage 2 opacity and transitions round-trip") {
+    core::Project p;
+    p.name = "stage2";
+    core::Sequence seq;
+    seq.id = "s1";
+    core::Track t;
+    t.id = "v1";
+    t.kind = core::TrackKind::Video;
+    seq.tracks.push_back(t);
+
+    core::Clip c1;
+    c1.id = "c1";
+    c1.name = "clip1";
+    c1.opacity = 0.75;
+    c1.sourceIn = core::Rational(0);
+    c1.sourceOut = core::Rational(5, 1);
+    c1.seqStart = core::Rational(0);
+
+    core::Clip c2;
+    c2.id = "c2";
+    c2.name = "clip2";
+    c2.opacity = 0.5;
+    c2.sourceIn = core::Rational(0);
+    c2.sourceOut = core::Rational(5, 1);
+    c2.seqStart = core::Rational(5, 1);
+
+    seq.clips.emplace(c1.id, c1);
+    seq.clips.emplace(c2.id, c2);
+    seq.tracks.front().clipIds.push_back(c1.id);
+    seq.tracks.front().clipIds.push_back(c2.id);
+
+    core::Transition tr;
+    tr.id = "tr1";
+    tr.trackId = "v1";
+    tr.fromClipId = "c1";
+    tr.toClipId = "c2";
+    tr.type = "wipe_left";
+    tr.duration = core::Rational(1, 1);
+    tr.alignment = core::TransitionAlignment::CenterOnCut;
+    tr.easing = "linear";
+    seq.transitions.push_back(tr);
+
+    p.sequences.push_back(seq);
+    p.activeSequenceId = "s1";
+
+    auto json = persist::projectToJson(p);
+    CHECK(json.isOk());
+
+    auto back = persist::projectFromJson(json.value());
+    CHECK(back.isOk());
+    const auto& s = back.value().sequences.front();
+    CHECK_EQ(s.clips.at("c1").opacity, 0.75);
+    CHECK_EQ(s.clips.at("c2").opacity, 0.5);
+    CHECK_EQ(s.transitions.size(), 1);
+    CHECK_EQ(s.transitions.front().id, std::string("tr1"));
+    CHECK_EQ(s.transitions.front().type, std::string("wipe_left"));
+    CHECK_EQ(s.transitions.front().alignment, core::TransitionAlignment::CenterOnCut);
 }
 
 int main() {

@@ -22,6 +22,8 @@ class Session final : public QObject {
     Q_PROPERTY(bool dirty READ dirty NOTIFY projectChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY projectChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY projectChanged)
+    Q_PROPERTY(bool rippleMode READ rippleMode WRITE setRippleMode NOTIFY rippleModeChanged)
+    Q_PROPERTY(bool snappingEnabled READ snappingEnabled WRITE setSnappingEnabled NOTIFY snappingEnabledChanged)
 
 public:
     explicit Session(QObject* parent = nullptr);
@@ -31,6 +33,10 @@ public:
     bool dirty() const { return dirty_; }
     bool canUndo() const;
     bool canRedo() const;
+    bool rippleMode() const { return rippleMode_; }
+    void setRippleMode(bool v);
+    bool snappingEnabled() const { return snappingEnabled_; }
+    void setSnappingEnabled(bool v);
 
     core::Project& project() { return project_; }
     const core::Project& project() const { return project_; }
@@ -53,13 +59,24 @@ public:
                               double newStartSec);
     Q_INVOKABLE bool setClipTransform(const QString& clipId, double scale, double x,
                                       double y, double rotationDeg);
+    Q_INVOKABLE bool setClipOpacity(const QString& clipId, double opacity);
     Q_INVOKABLE bool setClipText(const QString& clipId, const QString& text,
                                  const QString& fontFamily, double fontSizePt);
+    Q_INVOKABLE double snapTime(double targetSec, double thresholdSec = 0.2) const;
+    Q_INVOKABLE QString addTransition(const QString& trackId, const QString& fromClipId,
+                                      const QString& toClipId, const QString& type,
+                                      double durationSec = 1.0, int alignment = 0);
+    Q_INVOKABLE bool removeTransition(const QString& transitionId);
+    Q_INVOKABLE bool updateTransition(const QString& transitionId, double durationSec,
+                                      int alignment, const QString& type,
+                                      const QString& easing = "linear");
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
 
 signals:
     void projectChanged();
+    void rippleModeChanged();
+    void snappingEnabledChanged();
     void error(const QString& message);
 
 private:
@@ -73,6 +90,8 @@ private:
     core::ChangeBus bus_;
     QString filePath_;
     bool dirty_ = false;
+    bool rippleMode_ = false;
+    bool snappingEnabled_ = true;
 };
 
 } // namespace editor::shell

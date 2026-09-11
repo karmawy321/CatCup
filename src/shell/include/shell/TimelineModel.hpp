@@ -14,6 +14,7 @@ class TimelineModel final : public QAbstractListModel {
     Q_PROPERTY(double durationSec READ durationSec NOTIFY modelChanged)
     Q_PROPERTY(double fps READ fps NOTIFY modelChanged)
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY modelChanged)
+    Q_PROPERTY(QVariantList transitions READ transitions NOTIFY modelChanged)
 
 public:
     enum Roles {
@@ -37,11 +38,14 @@ public:
     double durationSec() const;
     double fps() const;
     QVariantList tracks() const;
+    QVariantList transitions() const { return transitions_; }
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE int rowForClipId(const QString& clipId) const;
     /// Full editable detail for the inspector (live read from the project).
     Q_INVOKABLE QVariantMap clipInfo(const QString& clipId) const;
+    Q_INVOKABLE QVariantMap transitionInfo(const QString& transId) const;
+    Q_INVOKABLE QString adjacentClipId(const QString& clipId, bool next) const;
 
 signals:
     void modelChanged();
@@ -59,6 +63,7 @@ private:
     Session* session_ = nullptr;
     std::vector<Row> rows_;
     QVariantList tracks_;
+    QVariantList transitions_;
     double durationSec_ = 0.0;
     double fps_ = 30.0;
 };

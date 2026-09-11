@@ -13,6 +13,8 @@ Pane {
 
     property var info: selection.selectedClipId !== ""
         ? timeline.clipInfo(selection.selectedClipId) : null
+    property var transInfo: selection.selectedTransitionId !== ""
+        ? timeline.transitionInfo(selection.selectedTransitionId) : null
 
     ColumnLayout {
         anchors.fill: parent
@@ -21,8 +23,9 @@ Pane {
         Label { text: "Inspector"; font.bold: true }
 
         Label {
-            visible: root.info === null || root.info.clipId === undefined
-            text: "Nothing selected.\nClick a timeline clip."
+            visible: (root.info === null || root.info.clipId === undefined) &&
+                     (root.transInfo === null || root.transInfo.id === undefined)
+            text: "Nothing selected.\nClick a timeline clip or transition."
             opacity: 0.6
             wrapMode: Text.WordWrap
         }
@@ -54,6 +57,12 @@ Pane {
                         var i = root.info
                         session.trimClip(selection.selectedClipId, i.sourceInSec, i.sourceInSec + v, i.startSec)
                     }
+                }
+                Label { text: "Opacity" }
+                DoubleField {
+                    from: 0.0; to: 1.0
+                    value: root.info && root.info.opacity !== undefined ? root.info.opacity : 1.0
+                    onApply: (v) => session.setClipOpacity(selection.selectedClipId, Math.max(0.0, Math.min(1.0, v)))
                 }
             }
 
@@ -120,6 +129,102 @@ Pane {
                     Button {
                         text: "Apply text"
                         onClicked: session.setClipText(selection.selectedClipId, titleText.text, titleFont.text, titleSize.value)
+                    }
+                }
+            }
+
+            Item { Layout.fillHeight: true }
+        }
+
+        // ---- Transition Inspector
+        ColumnLayout {
+            visible: root.transInfo !== null && root.transInfo.id !== undefined
+            spacing: 6
+            Layout.fillWidth: true
+
+            Label { text: "Transition: " + (root.transInfo ? root.transInfo.type : ""); font.bold: true }
+
+            GridLayout {
+                columns: 2
+                columnSpacing: 8
+                rowSpacing: 6
+                Layout.fillWidth: true
+
+                Label { text: "Type" }
+                ComboBox {
+                    id: typeCombo
+                    Layout.fillWidth: true
+                    model: ["crossfade", "dip_black", "dip_white", "wipe_left", "wipe_right", "wipe_up", "wipe_down"]
+                    currentIndex: {
+                        if (!root.transInfo) return 0
+                        var idx = model.indexOf(root.transInfo.type)
+                        return idx >= 0 ? idx : 0
+                    }
+                    onActivated: {
+                        if (root.transInfo && selection.selectedTransitionId !== "") {
+                            session.updateTransition(
+                                selection.selectedTransitionId,
+                                root.transInfo.durationSec,
+                                alignCombo.currentIndex,
+                                currentText,
+                                "linear"
+                            )
+                        }
+                    }
+                }
+
+                Label { text: "Duration (s)" }
+                DoubleField {
+                    id: transDurField
+                    from: 0.1; to: 10.0
+                    value: root.transInfo ? root.transInfo.durationSec : 1.0
+                    onApply: (v) => {
+                        if (root.transInfo && selection.selectedTransitionId !== "") {
+                            session.updateTransition(
+                                selection.selectedTransitionId,
+                                v,
+                                alignCombo.currentIndex,
+                                typeCombo.currentText,
+                                "linear"
+                            )
+                        }
+                    }
+                }
+
+                Label { text: "Alignment" }
+                ComboBox {
+                    id: alignCombo
+                    Layout.fillWidth: true
+                    model: ["Center on Cut", "Start on Cut", "End on Cut"]
+                    currentIndex: {
+                        if (!root.transInfo) return 0
+                        var al = root.transInfo.alignment
+                        if (al === "start") return 1
+                        if (al === "end") return 2
+                        return 0
+                    }
+                    onActivated: {
+                        if (root.transInfo && selection.selectedTransitionId !== "") {
+                            session.updateTransition(
+                                selection.selectedTransitionId,
+                                root.transInfo.durationSec,
+                                currentIndex,
+                                typeCombo.currentText,
+                                "linear"
+                            )
+                        }
+                    }
+                }
+            }
+
+            Button {
+                text: "Delete Transition"
+                highlighted: true
+                Layout.fillWidth: true
+                onClicked: {
+                    if (selection.selectedTransitionId !== "") {
+                        session.removeTransition(selection.selectedTransitionId)
+                        selection.clearSelection()
                     }
                 }
             }

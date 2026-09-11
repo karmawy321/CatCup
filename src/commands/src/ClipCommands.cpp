@@ -113,6 +113,15 @@ public:
         index_ = pos == track->clipIds.end()
                      ? 0
                      : static_cast<std::size_t>(pos - track->clipIds.begin());
+        removedTransitions_.clear();
+        for (auto tit = seq->transitions.begin(); tit != seq->transitions.end(); ) {
+            if (tit->fromClipId == clipId_ || tit->toClipId == clipId_) {
+                removedTransitions_.push_back(*tit);
+                tit = seq->transitions.erase(tit);
+            } else {
+                ++tit;
+            }
+        }
         detachFromTrack(*seq, trackId_, clipId_);
         seq->clips.erase(it);
         return true;
@@ -125,6 +134,9 @@ public:
                 const std::size_t at = (std::min)(index_, track->clipIds.size());
                 track->clipIds.insert(track->clipIds.begin() + at, snapshot_.id);
             }
+            for (const auto& tr : removedTransitions_) {
+                seq->transitions.push_back(tr);
+            }
         }
     }
 
@@ -133,6 +145,7 @@ private:
     core::Id clipId_;
     core::Clip snapshot_;
     std::size_t index_ = 0;
+    std::vector<core::Transition> removedTransitions_;
 };
 
 class MoveClipCommand final : public ICommand {
@@ -453,6 +466,223 @@ private:
     bool haveOld_ = false;
 };
 
+class RippleDeleteClipCommand final : public ICommand {
+public:
+    RippleDeleteClipCommand(core::Id trackId, core::Id clipId)
+        : trackId_(std::move(trackId)), clipId_(std::move(clipId)) {}
+
+    std::string label() const override { return "Ripple delete clip"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Track* track = seq->findTrack(trackId_);
+        if (track == nullptr) {
+            error = "track not found: " + trackId_;
+            return false;
+        }
+        if (track->locked) {
+            error = "track is locked: " + track->name;
+            return false;
+        }
+        const auto it = seq->clips.find(clipId_);
+        if (it == seq->clips.end()) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        snapshot_ = it->second;
+        const auto pos = std::find(track->clipIds.begin(), track->clipIds.end(), clipId_);
+        index_ = pos == track->clipIds.end() ? 0 : static_cast<std::size_t>(pos - track->clipIds.begin());
+        const core::Rational dur = snapshot_.seqDuration();
+        const core::Rational cutEnd = snapshot_.seqEnd();
+
+        shiftedClips_.clear();
+        for (const auto& cid : track->clipIds) {
+            if (cid == clipId_) continue;
+            auto cit = seq->clips.find(cid);
+            if (cit != seq->clips.end() && cit->second.seqStart >= cutEnd) {
+                shiftedClips_.push_back({cid, cit->second.seqStart});
+                cit->second.seqStart = cit->second.seqStart - dur;
+            }
+        }
+
+        removedTransitions_.clear();
+        for (auto tit = seq->transitions.begin(); tit != seq->transitions.end(); ) {
+            if (tit->fromClipId == clipId_ || tit->toClipId == clipId_) {
+                removedTransitions_.push_back(*tit);
+                tit = seq->transitions.erase(tit);
+            } else {
+                ++tit;
+            }
+        }
+
+        detachFromTrack(*seq, trackId_, clipId_);
+        seq->clips.erase(it);
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            seq->clips.emplace(snapshot_.id, snapshot_);
+            if (core::Track* track = seq->findTrack(trackId_)) {
+                const std::size_t at = (std::min)(index_, track->clipIds.size());
+                track->clipIds.insert(track->clipIds.begin() + at, snapshot_.id);
+            }
+            for (const auto& [cid, oldStart] : shiftedClips_) {
+                if (auto cit = seq->clips.find(cid); cit != seq->clips.end()) {
+                    cit->second.seqStart = oldStart;
+                }
+            }
+            for (const auto& tr : removedTransitions_) {
+                seq->transitions.push_back(tr);
+            }
+        }
+    }
+
+private:
+    core::Id trackId_;
+    core::Id clipId_;
+    core::Clip snapshot_;
+    std::size_t index_ = 0;
+    std::vector<std::pair<core::Id, core::Rational>> shiftedClips_;
+    std::vector<core::Transition> removedTransitions_;
+};
+
+class RippleTrimClipCommand final : public ICommand {
+public:
+    RippleTrimClipCommand(core::Id clipId, core::Rational newIn, core::Rational newOut,
+                          core::Rational newStart)
+        : clipId_(std::move(clipId)), newIn_(newIn), newOut_(newOut), newStart_(newStart) {}
+
+    std::string label() const override { return "Ripple trim clip"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (clip == nullptr) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        if (!(newIn_ < newOut_)) {
+            error = "newIn must be < newOut";
+            return false;
+        }
+        if (newIn_.isNegative() || newStart_.isNegative()) {
+            error = "times cannot be negative";
+            return false;
+        }
+        const auto* asset = findAsset(project, clip->assetId);
+        if (asset != nullptr && asset->duration.num() > 0 && newOut_ > asset->duration) {
+            error = "trimmed range extends past asset duration";
+            return false;
+        }
+
+        prevIn_ = clip->sourceIn;
+        prevOut_ = clip->sourceOut;
+        prevStart_ = clip->seqStart;
+        const core::Rational oldEnd = clip->seqEnd();
+        const core::Rational newDur = newOut_ - newIn_;
+        const core::Rational delta = (newStart_ + newDur) - oldEnd;
+
+        const core::Track* trk = nullptr;
+        for (const auto& t : seq->tracks) {
+            for (const auto& cid : t.clipIds) {
+                if (cid == clipId_) {
+                    trk = &t;
+                    break;
+                }
+            }
+            if (trk != nullptr) break;
+        }
+
+        shiftedClips_.clear();
+        if (trk != nullptr && !delta.isZero()) {
+            for (const auto& cid : trk->clipIds) {
+                if (cid == clipId_) continue;
+                auto cit = seq->clips.find(cid);
+                if (cit != seq->clips.end() && cit->second.seqStart >= oldEnd) {
+                    shiftedClips_.push_back({cid, cit->second.seqStart});
+                    cit->second.seqStart = cit->second.seqStart + delta;
+                }
+            }
+        }
+
+        clip->sourceIn = newIn_;
+        clip->sourceOut = newOut_;
+        clip->seqStart = newStart_;
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            if (core::Clip* clip = seq->findClip(clipId_)) {
+                clip->sourceIn = prevIn_;
+                clip->sourceOut = prevOut_;
+                clip->seqStart = prevStart_;
+            }
+            for (const auto& [cid, oldStart] : shiftedClips_) {
+                if (auto cit = seq->clips.find(cid); cit != seq->clips.end()) {
+                    cit->second.seqStart = oldStart;
+                }
+            }
+        }
+    }
+
+private:
+    core::Id clipId_;
+    core::Rational newIn_, newOut_, newStart_;
+    core::Rational prevIn_{0}, prevOut_{0}, prevStart_{0};
+    std::vector<std::pair<core::Id, core::Rational>> shiftedClips_;
+};
+
+class SetOpacityCommand final : public ICommand {
+public:
+    SetOpacityCommand(core::Id clipId, double opacity)
+        : clipId_(std::move(clipId)), opacity_(opacity) {}
+
+    std::string label() const override { return "Set clip opacity"; }
+
+    bool execute(core::Project& project, std::string& error) override {
+        core::Sequence* seq = project.activeSequence();
+        if (seq == nullptr) {
+            error = "no active sequence";
+            return false;
+        }
+        core::Clip* clip = seq->findClip(clipId_);
+        if (clip == nullptr) {
+            error = "clip not found: " + clipId_;
+            return false;
+        }
+        if (opacity_ < 0.0 || opacity_ > 1.0) {
+            error = "opacity must be in [0, 1]";
+            return false;
+        }
+        prevOpacity_ = clip->opacity;
+        clip->opacity = opacity_;
+        return true;
+    }
+
+    void undo(core::Project& project) override {
+        if (core::Sequence* seq = project.activeSequence()) {
+            if (core::Clip* clip = seq->findClip(clipId_)) {
+                clip->opacity = prevOpacity_;
+            }
+        }
+    }
+
+private:
+    core::Id clipId_;
+    double opacity_ = 1.0;
+    double prevOpacity_ = 1.0;
+};
+
 std::unique_ptr<ICommand> makeSetTransformCommand(const core::Id& clipId,
                                                   core::Transform transform) {
     return std::make_unique<SetTransformCommand>(clipId, transform);
@@ -462,6 +692,19 @@ std::unique_ptr<ICommand> makeSetTextCommand(const core::Id& clipId, std::string
                                              std::string fontFamily, double fontSizePt) {
     return std::make_unique<SetTextCommand>(clipId, std::move(text), std::move(fontFamily),
                                             fontSizePt);
+}
+
+std::unique_ptr<ICommand> makeRippleDeleteClipCommand(const core::Id& trackId, const core::Id& clipId) {
+    return std::make_unique<RippleDeleteClipCommand>(trackId, clipId);
+}
+
+std::unique_ptr<ICommand> makeRippleTrimClipCommand(const core::Id& clipId, core::Rational newIn,
+                                                    core::Rational newOut, core::Rational newStart) {
+    return std::make_unique<RippleTrimClipCommand>(clipId, newIn, newOut, newStart);
+}
+
+std::unique_ptr<ICommand> makeSetOpacityCommand(const core::Id& clipId, double opacity) {
+    return std::make_unique<SetOpacityCommand>(clipId, opacity);
 }
 
 } // namespace editor::commands

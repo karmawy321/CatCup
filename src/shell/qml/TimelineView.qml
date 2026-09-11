@@ -35,8 +35,23 @@ Pane {
                 if (selection.selectedClipId !== "") {
                     session.deleteClip(selection.selectedClipId)
                     selection.clearSelection()
+                } else if (selection.selectedTransitionId !== "") {
+                    session.removeTransition(selection.selectedTransitionId)
+                    selection.clearSelection()
                 }
             } }
+            Button {
+                text: session.snappingEnabled ? "Snap: ON" : "Snap: OFF"
+                checkable: true
+                checked: session.snappingEnabled
+                onClicked: session.snappingEnabled = !session.snappingEnabled
+            }
+            Button {
+                text: session.rippleMode ? "Ripple: ON" : "Ripple: OFF"
+                checkable: true
+                checked: session.rippleMode
+                onClicked: session.rippleMode = !session.rippleMode
+            }
             Item { Layout.fillWidth: true }
             Label { text: "Zoom"; opacity: 0.6 }
             Button { text: "−"; onClicked: selection.zoomOut() }
@@ -141,8 +156,8 @@ Pane {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onPressed: (m) => selection.setPlayheadSec(Math.max(0, m.x / root.px))
-                            onPositionChanged: (m) => { if (pressed) selection.setPlayheadSec(Math.max(0, m.x / root.px)) }
+                            onPressed: (m) => selection.setPlayheadSec(session.snapTime(Math.max(0, m.x / root.px)))
+                            onPositionChanged: (m) => { if (pressed) selection.setPlayheadSec(session.snapTime(Math.max(0, m.x / root.px))) }
                         }
                     }
 
@@ -169,6 +184,19 @@ Pane {
                                     durationSec: model.durationSec
                                     pxPerSec: root.px
                                     selected: selection.selectedClipId === model.clipId
+                                    laneHeight: parent.height
+                                }
+                            }
+                            Repeater {
+                                model: timeline.transitions
+                                delegate: TransitionBlock {
+                                    visible: modelData.trackId === track.trackId
+                                    transId: modelData.id
+                                    type: modelData.type
+                                    startSec: modelData.startSec
+                                    durationSec: modelData.rangeDurationSec
+                                    pxPerSec: root.px
+                                    selected: selection.selectedTransitionId === modelData.id
                                     laneHeight: parent.height
                                 }
                             }
@@ -263,6 +291,7 @@ Pane {
                 }
                 if (pressedSize === "move") {
                     var ns = Math.max(0, parent.x / pxPerSec)
+                    ns = session.snapTime(ns)
                     parent.x = pressX // model refresh repositions authoritatively
                     session.moveClipTo(parent.clipId, ns)
                 } else {
@@ -270,20 +299,64 @@ Pane {
                     // so measure the pointer travel instead of item travel.
                     var dxSec = (curMouseX - pressMouseX) / pxPerSec
                     if (pressedSize === "left") {
+                        var newStart = session.snapTime(pressInfo.startSec + dxSec)
+                        var effectiveDx = newStart - pressInfo.startSec
                         session.trimClip(parent.clipId,
-                            pressInfo.sourceInSec + dxSec,
+                            pressInfo.sourceInSec + effectiveDx,
                             pressInfo.sourceInSec + pressInfo.durationSec,
-                            pressInfo.startSec + dxSec)
+                            newStart)
                     } else {
+                        var newEnd = session.snapTime(pressInfo.startSec + pressInfo.durationSec + dxSec)
+                        var newDur = Math.max(0.1, newEnd - pressInfo.startSec)
                         session.trimClip(parent.clipId,
                             pressInfo.sourceInSec,
-                            pressInfo.sourceInSec + pressInfo.durationSec + dxSec,
+                            pressInfo.sourceInSec + newDur,
                             pressInfo.startSec)
                     }
                 }
                 pressedSize = ""
                 pressInfo = null
             }
+        }
+    }
+
+    // ---- one timeline transition badge at cut point
+    component TransitionBlock : Rectangle {
+        id: transBadge
+        property string transId: ""
+        property string type: "crossfade"
+        property double startSec: 0
+        property double durationSec: 1
+        property double pxPerSec: 48
+        property bool selected: false
+        property double laneHeight: 40
+
+        x: startSec * pxPerSec
+        y: 4
+        width: Math.max(16, durationSec * pxPerSec)
+        height: laneHeight - 8
+        radius: 3
+        color: selected ? "#0284c7" : "#0369a1"
+        opacity: 0.85
+        border.color: selected ? "#38bdf8" : "#bae6fd"
+        border.width: selected ? 2 : 1
+        z: 10
+
+        Label {
+            anchors.fill: parent
+            anchors.margins: 2
+            text: transBadge.type
+            elide: Text.ElideRight
+            font.pointSize: 7
+            font.bold: true
+            color: "#ffffff"
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: selection.selectTransition(transBadge.transId)
         }
     }
 }

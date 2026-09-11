@@ -35,6 +35,23 @@ core::Result<int> migrateDocument(JsonValue& root) {
         obj["schemaVersion"] = JsonValue(std::int64_t{1});
     }
 
+    // v1 -> v2: Stage 2 everyday editor introduces transitions array on sequences.
+    if (version == 1) {
+        if (const auto seqs = obj.find("sequences"); seqs != obj.end() && seqs->second.isArray()) {
+            for (auto& seqVal : std::get<JsonArray>(seqs->second.data)) {
+                if (!seqVal.isObject()) {
+                    continue;
+                }
+                auto& seq = std::get<JsonObject>(seqVal.data);
+                if (seq.find("transitions") == seq.end()) {
+                    seq["transitions"] = JsonArray{};
+                }
+            }
+        }
+        version = 2;
+        obj["schemaVersion"] = JsonValue(std::int64_t{2});
+    }
+
     if (version > core::kCurrentSchemaVersion) {
         return core::Result<int>::fail("project schema v" + std::to_string(version) +
                                        " is newer than this build (v" +

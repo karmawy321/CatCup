@@ -1,6 +1,7 @@
 #include "shell/Session.hpp"
 
 #include "commands/ClipCommands.hpp"
+#include "commands/TransitionCommands.hpp"
 #include "core/Ids.hpp"
 #include "media_ffmpeg/FfmpegProber.hpp"
 #include "persist/ProjectSerializer.hpp"
@@ -202,6 +203,53 @@ bool Session::splitSelectedAtPlayhead(const QString& clipId, double playheadSec)
         clip->id, at, core::IdGenerator::make("clip")));
 }
 
+void Session::setRippleMode(bool v) {
+    if (rippleMode_ != v) {
+        rippleMode_ = v;
+        emit rippleModeChanged();
+    }
+}
+
+void Session::setSnappingEnabled(bool v) {
+    if (snappingEnabled_ != v) {
+        snappingEnabled_ = v;
+        emit snappingEnabledChanged();
+    }
+}
+
+double Session::snapTime(double targetSec, double thresholdSec) const {
+    if (!snappingEnabled_) {
+        return targetSec;
+    }
+    const core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) {
+        return targetSec;
+    }
+    double bestSnap = targetSec;
+    double bestDist = thresholdSec;
+
+    if (std::abs(targetSec) < bestDist) {
+        bestDist = std::abs(targetSec);
+        bestSnap = 0.0;
+    }
+
+    for (const auto& [id, clip] : seq->clips) {
+        const double start = static_cast<double>(clip.seqStart);
+        const double end = static_cast<double>(clip.seqEnd());
+        const double distStart = std::abs(targetSec - start);
+        if (distStart < bestDist) {
+            bestDist = distStart;
+            bestSnap = start;
+        }
+        const double distEnd = std::abs(targetSec - end);
+        if (distEnd < bestDist) {
+            bestDist = distEnd;
+            bestSnap = end;
+        }
+    }
+    return bestSnap;
+}
+
 bool Session::deleteClip(const QString& clipId) {
     core::Sequence* seq = project_.activeSequence();
     if (seq == nullptr || clipId.isEmpty()) {
@@ -213,6 +261,9 @@ bool Session::deleteClip(const QString& clipId) {
                 if (track.locked) {
                     emit error("Track is locked");
                     return false;
+                }
+                if (rippleMode_) {
+                    return execute(commands::makeRippleDeleteClipCommand(track.id, id));
                 }
                 return execute(commands::makeRemoveClipCommand(track.id, id));
             }
@@ -235,9 +286,95 @@ bool Session::trimClip(const QString& clipId, double newInSec, double newOutSec,
     if (clipId.isEmpty()) {
         return false;
     }
+    if (rippleMode_) {
+        return execute(commands::makeRippleTrimClipCommand(
+            clipId.toStdString(), rationalFromSeconds(newInSec), rationalFromSeconds(newOutSec),
+            rationalFromSeconds(newStartSec)));
+    }
     return execute(commands::makeTrimClipCommand(
         clipId.toStdString(), rationalFromSeconds(newInSec), rationalFromSeconds(newOutSec),
         rationalFromSeconds(newStartSec)));
+}
+
+bool Session::setClipOpacity(const QString& clipId, double opacity) {
+    if (clipId.isEmpty()) {
+        return false;
+    }
+    return execute(commands::makeSetOpacityCommand(clipId.toStdString(), opacity));
+}
+
+QString Session::addTransition(const QString& trackId, const QString& fromClipId,
+                               const QString& toClipId, const QString& type,
+                               double durationSec, int alignment) {
+    core::Sequence* seq = project_.activeSequence();
+    if (seq == nullptr) {
+        emit error("No active sequence");
+        return {};
+    }
+    std::string tid = trackId.toStdString();
+    if (tid.empty() && !fromClipId.isEmpty()) {
+        for (const auto& t : seq->tracks) {
+            for (const auto& cid : t.clipIds) {
+                if (cid == fromClipId.toStdString()) {
+                    tid = t.id;
+                    break;
+                }
+            }
+            if (!tid.empty()) break;
+        }
+    }
+    if (tid.empty()) {
+        emit error("Could not determine track for transition");
+        return {};
+    }
+    core::Transition t;
+    t.id = core::IdGenerator::make("trans");
+    t.trackId = tid;
+    t.fromClipId = fromClipId.toStdString();
+    t.toClipId = toClipId.toStdString();
+    t.type = type.isEmpty() ? "crossfade" : type.toStdString();
+    t.duration = rationalFromSeconds(durationSec);
+    if (alignment == 1) {
+        t.alignment = core::TransitionAlignment::StartOnCut;
+    } else if (alignment == 2) {
+        t.alignment = core::TransitionAlignment::EndOnCut;
+    } else {
+        t.alignment = core::TransitionAlignment::CenterOnCut;
+    }
+    t.easing = "linear";
+
+    const QString transId = QString::fromStdString(t.id);
+    if (!execute(commands::makeAddTransitionCommand(std::move(t)))) {
+        return {};
+    }
+    return transId;
+}
+
+bool Session::removeTransition(const QString& transitionId) {
+    if (transitionId.isEmpty()) {
+        return false;
+    }
+    return execute(commands::makeRemoveTransitionCommand(transitionId.toStdString()));
+}
+
+bool Session::updateTransition(const QString& transitionId, double durationSec,
+                               int alignment, const QString& type, const QString& easing) {
+    if (transitionId.isEmpty()) {
+        return false;
+    }
+    core::TransitionAlignment align = core::TransitionAlignment::CenterOnCut;
+    if (alignment == 1) {
+        align = core::TransitionAlignment::StartOnCut;
+    } else if (alignment == 2) {
+        align = core::TransitionAlignment::EndOnCut;
+    }
+
+    return execute(commands::makeUpdateTransitionCommand(
+        transitionId.toStdString(),
+        rationalFromSeconds(durationSec),
+        align,
+        type.toStdString(),
+        easing.toStdString()));
 }
 
 bool Session::setClipTransform(const QString& clipId, double scale, double x, double y,

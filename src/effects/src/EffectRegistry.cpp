@@ -32,8 +32,67 @@ const EffectRegistry& EffectRegistry::defaults() {
                 {"fadeOut", ParamType::Float, 0.0, 10.0, 0.0, false, "s"},
             },
         });
-        // Stages 2-3 extend this table (transitions, color, masks, speed).
-        // Each new entry needs its CPU reference + inspector metadata together.
+        // Stage 2 Transitions
+        r.defs_.push_back(EffectDef{
+            "crossfade",
+            1,
+            "Crossfade",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "dip_black",
+            1,
+            "Dip to Black",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "dip_white",
+            1,
+            "Dip to White",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "wipe_left",
+            1,
+            "Wipe Left",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+                {"softness", ParamType::Float, 0.0, 1.0, 0.0, false, "%"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "wipe_right",
+            1,
+            "Wipe Right",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+                {"softness", ParamType::Float, 0.0, 1.0, 0.0, false, "%"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "wipe_up",
+            1,
+            "Wipe Up",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+                {"softness", ParamType::Float, 0.0, 1.0, 0.0, false, "%"},
+            },
+        });
+        r.defs_.push_back(EffectDef{
+            "wipe_down",
+            1,
+            "Wipe Down",
+            {
+                {"duration", ParamType::Float, 0.1, 5.0, 1.0, false, "s"},
+                {"softness", ParamType::Float, 0.0, 1.0, 0.0, false, "%"},
+            },
+        });
         return r;
     }();
     return registry;
