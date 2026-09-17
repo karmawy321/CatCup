@@ -136,7 +136,7 @@ TEST_CASE("capcut_draft: import parses microsecond timings, tracks, and transfor
 
     // Tracks
     CHECK(seq->tracks.size() >= 3);
-    
+
     // Check video clip
     auto itClip = seq->clips.find("seg_v1");
     CHECK(itClip != seq->clips.end());
