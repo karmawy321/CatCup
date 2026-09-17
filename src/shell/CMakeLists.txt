@@ -31,6 +31,11 @@ qt_add_executable(editor-ui
     include/shell/ExportController.hpp
 )
 
+set_source_files_properties(qml/Theme.qml
+    PROPERTIES
+        QT_QML_SINGLETON_TYPE TRUE
+)
+
 qt_add_qml_module(editor-ui
     URI NativeEditor
     VERSION 1.0
@@ -46,6 +51,9 @@ qt_add_qml_module(editor-ui
         qml/Inspector.qml
         qml/TimelineView.qml
         qml/ExportDialog.qml
+    RESOURCES
+        assets/images/catcup_icon.png
+        assets/images/catcup_icon_transparent.png
 )
 
 target_include_directories(editor-ui PRIVATE include)
@@ -69,6 +77,10 @@ target_link_libraries(editor-ui
         effects
         ai
 )
+
+if(WIN32)
+    target_link_libraries(editor-ui PRIVATE dwmapi)
+endif()
 
 if(MSVC)
     target_compile_options(editor-ui PRIVATE /W4 /WX /wd4702)

@@ -3,6 +3,7 @@ add_library(persist STATIC
     src/Migrations.cpp
     src/AtomicFile.cpp
     src/ProjectSerializer.cpp
+    src/CapCutDraftBridge.cpp
 )
 
 target_include_directories(persist PUBLIC include)

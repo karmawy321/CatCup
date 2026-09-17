@@ -38,6 +38,7 @@ struct Asset {
     std::int64_t width = 0;
     std::int64_t height = 0;
     std::string hash;            // content hash when known (derived assets)
+    bool hasAudio = false;
 };
 
 struct Effect {

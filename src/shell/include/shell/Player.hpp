@@ -31,6 +31,9 @@ class Player final : public QObject {
     Q_PROPERTY(bool playing READ playing NOTIFY playingChanged)
     Q_PROPERTY(double positionSec READ positionSec NOTIFY positionChanged)
     Q_PROPERTY(double durationSec READ durationSec NOTIFY durationChanged)
+    Q_PROPERTY(double volume READ volume WRITE setVolume NOTIFY volumeChanged)
+    Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
+    Q_PROPERTY(bool audioOutputAvailable READ audioOutputAvailable NOTIFY audioOutputAvailableChanged)
 
 public:
     explicit Player(QObject* parent = nullptr);
@@ -41,6 +44,11 @@ public:
     bool playing() const { return playing_; }
     double positionSec() const { return positionSec_; }
     double durationSec() const { return durationSec_; }
+    double volume() const { return volume_; }
+    void setVolume(double v);
+    bool muted() const { return muted_; }
+    void setMuted(bool m);
+    bool audioOutputAvailable() const { return audioOutputAvailable_; }
 
     Q_INVOKABLE void play();
     Q_INVOKABLE void pause();
@@ -52,6 +60,9 @@ signals:
     void playingChanged();
     void positionChanged();
     void durationChanged();
+    void volumeChanged();
+    void mutedChanged();
+    void audioOutputAvailableChanged();
     void playbackFinished();
     void error(const QString& message);
     void videoFrame(const QImage& image, double seconds);
@@ -74,6 +85,11 @@ private:
     bool playing_ = false;
     double positionSec_ = 0.0;
     double durationSec_ = 0.0;
+    double volume_ = 1.0;
+    bool muted_ = false;
+    bool audioOutputAvailable_ = true;
+    std::atomic<float> volumeAtomic_{1.0f};
+    std::atomic_bool mutedAtomic_{false};
 
     AudioPump* audioPump_ = nullptr;
     QThread* videoThread_ = nullptr;

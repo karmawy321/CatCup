@@ -13,6 +13,7 @@ import QtQuick.Layouts
 Rectangle {
     id: root
     property double playheadSec: 0
+    property var mainWindow: null
 
     color: Theme.bgApp
     border.color: Theme.borderSubtle
@@ -26,6 +27,43 @@ Rectangle {
     // Active dragging state across tracks
     property string activeDragClipId: ""
     property string hoveredTrackId: ""
+    property bool snappingEnabled: session ? session.snappingEnabled : true
+    property bool rippleMode: session ? session.rippleMode : false
+
+    function seekToTime(sec) {
+        var t = Math.max(0, sec)
+        if (player.durationSec > 0 && t > player.durationSec) {
+            t = player.durationSec
+        } else if (timeline.durationSec > 0 && t > timeline.durationSec) {
+            t = timeline.durationSec
+        }
+        if (mainWindow && typeof mainWindow.seek === 'function') {
+            mainWindow.seek(t)
+        } else {
+            selection.setPlayheadSec(t)
+            if (player && typeof player.seekTo === 'function') {
+                player.seekTo(t)
+            }
+        }
+        ensurePlayheadVisible(t)
+    }
+
+    function snapTime(targetSec) {
+        if (!root.snappingEnabled) return targetSec
+        if (session && typeof session.snapTime === 'function') {
+            return session.snapTime(targetSec)
+        }
+        return targetSec
+    }
+
+    function ensurePlayheadVisible(sec) {
+        var x = sec * root.px
+        if (x < lanesFlick.contentX + 40) {
+            lanesFlick.contentX = Math.max(0, x - 40)
+        } else if (x > lanesFlick.contentX + lanesFlick.width - 60) {
+            lanesFlick.contentX = Math.max(0, x - lanesFlick.width + 60)
+        }
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -91,6 +129,20 @@ Rectangle {
                     }
                 }
 
+                // Extract Audio Tool
+                StudioButton {
+                    text: "Extract Audio"
+                    iconText: "♫"
+                    compact: true
+                    variant: "secondary"
+                    enabled: selection.selectedClipId !== "" && (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(selection.selectedClipId))
+                    onClicked: {
+                        if (selection.selectedClipId !== "") {
+                            session.extractAudioFromClip(selection.selectedClipId)
+                        }
+                    }
+                }
+
                 // Undo
                 StudioButton {
                     iconText: "↶"
@@ -117,9 +169,15 @@ Rectangle {
                     iconText: "∩"
                     compact: true
                     checkable: true
-                    checked: session.snappingEnabled
-                    variant: session.snappingEnabled ? "accent" : "ghost"
-                    onClicked: session.snappingEnabled = !session.snappingEnabled
+                    checked: session ? session.snappingEnabled : root.snappingEnabled
+                    variant: (session ? session.snappingEnabled : root.snappingEnabled) ? "accent" : "ghost"
+                    onClicked: {
+                        if (session) {
+                            session.setSnappingEnabled(!session.snappingEnabled)
+                        } else {
+                            root.snappingEnabled = !root.snappingEnabled
+                        }
+                    }
                 }
 
                 // Auto-Ripple (CapCut Ripple Toggle)
@@ -128,9 +186,15 @@ Rectangle {
                     iconText: "⇥⇤"
                     compact: true
                     checkable: true
-                    checked: session.rippleMode
-                    variant: session.rippleMode ? "accent" : "ghost"
-                    onClicked: session.rippleMode = !session.rippleMode
+                    checked: session ? session.rippleMode : root.rippleMode
+                    variant: (session ? session.rippleMode : root.rippleMode) ? "accent" : "ghost"
+                    onClicked: {
+                        if (session) {
+                            session.setRippleMode(!session.rippleMode)
+                        } else {
+                            root.rippleMode = !root.rippleMode
+                        }
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
@@ -313,7 +377,21 @@ Rectangle {
                                 spacing: 6
                                 Text { text: "⚿"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.6 }
                                 Text { text: "◉"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.7 }
-                                Text { text: "♫"; font.pixelSize: 10; color: Theme.textTertiary; opacity: 0.6 }
+                                Text {
+                                    text: "♫"
+                                    font.pixelSize: 10
+                                    color: modelData.muted ? Theme.red : Theme.textTertiary
+                                    opacity: modelData.muted ? 1.0 : 0.6
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (session && typeof session.setTrackMuted === 'function') {
+                                                session.setTrackMuted(modelData.trackId, !modelData.muted)
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                         }
@@ -331,12 +409,12 @@ Rectangle {
                 contentHeight: rulerCol.height
                 flickableDirection: Flickable.HorizontalFlick
 
-                onContentWidthChanged: followPlayhead()
+                onContentWidthChanged: lanesFlick.followPlayhead()
                 Connections {
                     target: root
                     function onPlayheadSecChanged() {
                         if (player.playing)
-                            followPlayhead()
+                            lanesFlick.followPlayhead()
                     }
                 }
                 function followPlayhead() {
@@ -421,11 +499,19 @@ Rectangle {
                         }
 
                         MouseArea {
+                            id: rulerMouseArea
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
-                            onPressed: (m) => selection.setPlayheadSec(session.snapTime(Math.max(0, m.x / root.px)))
+                            onPressed: (m) => {
+                                if (player.playing) player.pause()
+                                var pos = mapToItem(rulerCol, m.x, m.y)
+                                seekToTime(snapTime(Math.max(0, pos.x / root.px)))
+                            }
                             onPositionChanged: (m) => {
-                                if (pressed) selection.setPlayheadSec(session.snapTime(Math.max(0, m.x / root.px)))
+                                if (pressed) {
+                                    var pos = mapToItem(rulerCol, m.x, m.y)
+                                    seekToTime(snapTime(Math.max(0, pos.x / root.px)))
+                                }
                             }
                         }
                     }
@@ -450,6 +536,19 @@ Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 height: 1
                                 color: "#1E1E22"
+                            }
+
+                            // Empty track lane click to seek & deselect
+                            MouseArea {
+                                anchors.fill: parent
+                                z: 0
+                                cursorShape: Qt.ArrowCursor
+                                onPressed: (m) => {
+                                    if (player.playing) player.pause()
+                                    selection.clearSelection()
+                                    var pos = mapToItem(rulerCol, m.x, m.y)
+                                    seekToTime(snapTime(Math.max(0, pos.x / root.px)))
+                                }
                             }
 
                             // Clips on this track
@@ -487,35 +586,137 @@ Rectangle {
                     }
                 }
 
-                // ---- CapCut Pure White Laser Playhead ----
-                // Playhead top white pill badge with current time
+                // Empty Timeline Overlay
                 Rectangle {
-                    x: root.playheadSec * root.px - width / 2
-                    y: 2
-                    width: 52
-                    height: 16
-                    radius: 3
-                    color: "#FFFFFF"
+                    visible: timeline.durationSec === 0
+                    anchors.centerIn: parent
+                    width: 380
+                    height: 110
+                    radius: 8
+                    color: Theme.bgCard
+                    border.color: Theme.borderMedium
+                    border.width: 1
                     z: 50
 
-                    Text {
+                    ColumnLayout {
                         anchors.centerIn: parent
-                        text: formatPlayheadPill(root.playheadSec)
-                        font.family: Theme.fontMono
-                        font.pixelSize: 9
-                        font.bold: true
-                        color: "#000000"
+                        spacing: 6
+
+                        Text {
+                            text: "🎬"
+                            font.pixelSize: 22
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Text {
+                            text: "Timeline is Empty"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 13
+                            font.weight: Font.DemiBold
+                            color: Theme.textPrimary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Text {
+                            text: "Import media and click [+ Add to Timeline] to start editing"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textSecondary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
                     }
                 }
 
-                // White Playhead needle line
-                Rectangle {
-                    x: root.playheadSec * root.px - 1
+                // ---- CapCut Pure White Laser Playhead Marker & Laser Needle ----
+                Item {
+                    id: playheadMarker
+                    x: Math.round(root.playheadSec * root.px) - 26
                     y: 0
-                    width: 2
+                    width: 52
                     height: rulerCol.height
-                    color: "#FFFFFF"
-                    z: 49
+                    z: 150
+
+                    // Top playhead timecode pill badge
+                    Rectangle {
+                        id: playheadPill
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: 3
+                        width: 50
+                        height: 16
+                        radius: 3
+                        color: playheadMarkerMa.pressed ? Theme.accent : (playheadMarkerMa.containsMouse ? "#EEEEEE" : "#FFFFFF")
+                        border.color: playheadMarkerMa.pressed ? "#00A5B5" : "#D0D0D5"
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: formatPlayheadPill(root.playheadSec)
+                            font.family: Theme.fontMono
+                            font.pixelSize: 9
+                            font.bold: true
+                            color: playheadMarkerMa.pressed ? "#FFFFFF" : "#111111"
+                        }
+                    }
+
+                    // Downward pointer arrow attached to pill
+                    Canvas {
+                        id: playheadArrow
+                        anchors.top: playheadPill.bottom
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 8
+                        height: 5
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.reset()
+                            ctx.fillStyle = playheadMarkerMa.pressed ? Theme.accent : "#FFFFFF"
+                            ctx.beginPath()
+                            ctx.moveTo(0, 0)
+                            ctx.lineTo(8, 0)
+                            ctx.lineTo(4, 5)
+                            ctx.closePath()
+                            ctx.fill()
+                        }
+                        Connections {
+                            target: playheadMarkerMa
+                            function onPressedChanged() { playheadArrow.requestPaint() }
+                        }
+                    }
+
+                    // Vertical laser needle line
+                    Rectangle {
+                        anchors.top: playheadArrow.bottom
+                        anchors.bottom: parent.bottom
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: 2
+                        color: playheadMarkerMa.pressed ? Theme.accent : "#FFFFFF"
+                    }
+
+                    // Draggable Grab Handle covering the marker pill and top ruler area
+                    MouseArea {
+                        id: playheadMarkerMa
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        height: root.rulerH
+                        hoverEnabled: true
+                        cursorShape: Qt.SizeHorCursor
+                        preventStealing: true
+
+                        property real grabOffsetPx: 0
+
+                        onPressed: (m) => {
+                            if (player.playing) player.pause()
+                            grabOffsetPx = m.x - 26
+                        }
+
+                        onPositionChanged: (m) => {
+                            if (pressed) {
+                                var pos = mapToItem(rulerCol, m.x, m.y)
+                                var targetX = pos.x - grabOffsetPx
+                                seekToTime(snapTime(Math.max(0, targetX / root.px)))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -533,6 +734,11 @@ Rectangle {
         property double pxPerSec: 48
         property bool selected: false
         property double laneHeight: 40
+
+        property var clipData: timeline.clipInfo(clipRoot.clipId)
+        property double sourceInSec: clipData && clipData.sourceInSec !== undefined ? clipData.sourceInSec : 0.0
+        property double speed: clipData && clipData.speed !== undefined ? clipData.speed : 1.0
+        property string assetId: clipData && clipData.assetId !== undefined ? clipData.assetId : ""
 
         // Adaptive dragging offset properties (Preserves QML declarative bindings!)
         property real dragOffsetX: 0
@@ -558,51 +764,59 @@ Rectangle {
         border.color: selected ? Theme.accent : (kind === "video" ? "#2A5A66" : (kind === "audio" ? "#2B4B63" : "#4A3366"))
         border.width: selected ? 2 : 1
 
-        // Top Filmstrip Notches for Video Clips
-        Rectangle {
-            visible: clipRoot.kind === "video"
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            height: 9
-            color: "#33000000"
+        // Real Video Filmstrip Thumbnails
+        Row {
+            visible: clipRoot.kind === "video" && clipRoot.assetId !== ""
+            anchors.fill: parent
+            clip: true
+            opacity: 0.35
 
-            Row {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: 4
-                spacing: 8
-                Repeater {
-                    model: Math.min(30, Math.floor(clipRoot.width / 14))
-                    delegate: Rectangle {
-                        width: 6
-                        height: 4
-                        radius: 1
-                        color: "#66FFFFFF"
-                    }
+            Repeater {
+                id: filmstripRepeater
+                readonly property int count: Math.max(1, Math.ceil(clipRoot.width / 56))
+                model: count
+                delegate: Image {
+                    width: 56
+                    height: clipRoot.height
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    readonly property real thumbFrac: (index + 0.5) / filmstripRepeater.count
+                    readonly property real timeSec: clipRoot.sourceInSec + (thumbFrac * clipRoot.durationSec * clipRoot.speed)
+                    source: "image://thumb/" + clipRoot.assetId + "?time=" + timeSec.toFixed(2)
                 }
             }
         }
 
-        // Audio Waveform Peaks for Audio Clips
+        // Real Audio Waveform Peaks (Flatline on silence, real peaks on media audio)
         Row {
-            visible: clipRoot.kind === "audio"
+            visible: clipRoot.kind !== "text"
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
             anchors.leftMargin: 6
             anchors.rightMargin: 6
             spacing: 3
-            opacity: 0.65
+            opacity: clipRoot.kind === "video" ? 0.45 : 0.8
 
             Repeater {
-                model: Math.min(80, Math.floor(clipRoot.width / 5))
+                id: waveRepeater
+                readonly property int barCount: Math.min(100, Math.max(4, Math.floor(clipRoot.width / 5)))
+                readonly property int pVer: timeline ? timeline.peaksVersion : 0
+                readonly property var peaks: (typeof timeline.clipAudioPeaks === 'function' && pVer >= 0)
+                    ? timeline.clipAudioPeaks(clipRoot.clipId, barCount)
+                    : []
+                model: barCount
                 delegate: Rectangle {
+                    readonly property real peakVal: (waveRepeater.peaks && index < waveRepeater.peaks.length)
+                        ? waveRepeater.peaks[index]
+                        : 0.0
+                    readonly property real maxH: clipRoot.kind === "video" ? 14 : 22
                     width: 2
-                    height: Math.max(4, Math.sin(index * 1.2) * 12 + 14)
+                    height: peakVal > 0.01 ? Math.max(2, Math.min(maxH, (peakVal / 0.5) * maxH)) : 1
                     radius: 1
-                    color: Theme.accent
-                    anchors.verticalCenter: parent.verticalCenter
+                    color: peakVal > 0.01 ? Theme.accent : Theme.textTertiary
+                    anchors.bottom: parent.bottom
                 }
             }
         }
@@ -700,6 +914,7 @@ Rectangle {
         MouseArea {
             id: dragMa
             anchors.fill: parent
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             hoverEnabled: true
             cursorShape: (mouseX < 8 || mouseX > width - 8) ? Qt.SizeHorCursor : Qt.ArrowCursor
 
@@ -711,6 +926,10 @@ Rectangle {
 
             onPressed: (m) => {
                 selection.select(clipRoot.clipId)
+                if (m.button === Qt.RightButton) {
+                    clipMenu.popup()
+                    return
+                }
                 root.activeDragClipId = clipRoot.clipId
                 pressStartX = clipRoot.startSec * pxPerSec
                 pressMouseX = m.x
@@ -768,20 +987,24 @@ Rectangle {
                 if (dragMode === "move") {
                     var finalPx = pressStartX + clipRoot.dragOffsetX
                     var targetSec = Math.max(0, finalPx / pxPerSec)
-                    targetSec = session.snapTime(targetSec)
+                    targetSec = snapTime(targetSec)
 
                     clipRoot.dragOffsetX = 0
                     clipRoot.dragOffsetY = 0
 
                     if (destTrack !== "" && destTrack !== clipRoot.currentTrackId) {
-                        session.moveClipToTrack(clipRoot.clipId, destTrack, targetSec)
+                        if (session && typeof session.moveClipToTrack === 'function') {
+                            session.moveClipToTrack(clipRoot.clipId, destTrack, targetSec)
+                        } else {
+                            session.moveClipTo(clipRoot.clipId, targetSec)
+                        }
                     } else {
                         session.moveClipTo(clipRoot.clipId, targetSec)
                     }
                 } else if (dragMode === "left_trim") {
                     var dxSec = clipRoot.dragOffsetX / pxPerSec
                     clipRoot.dragOffsetX = 0
-                    var newStart = session.snapTime(pressInfo.startSec + dxSec)
+                    var newStart = snapTime(pressInfo.startSec + dxSec)
                     var effectiveDx = newStart - pressInfo.startSec
                     session.trimClip(clipRoot.clipId,
                         pressInfo.sourceInSec + effectiveDx,
@@ -797,6 +1020,32 @@ Rectangle {
 
                 dragMode = ""
                 pressInfo = null
+            }
+        }
+
+        Menu {
+            id: clipMenu
+            MenuItem {
+                text: "Extract Audio (♫)"
+                visible: clipRoot.kind === "video" && (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(clipRoot.clipId))
+                onTriggered: session.extractAudioFromClip(clipRoot.clipId)
+            }
+            MenuItem {
+                text: "Export Audio to WAV…"
+                visible: (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(clipRoot.clipId))
+                onTriggered: session.extractAudioToFile(clipRoot.clipId)
+            }
+            MenuItem {
+                text: "Split at Playhead (S)"
+                onTriggered: session.splitSelectedAtPlayhead(clipRoot.clipId, root.playheadSec)
+            }
+            MenuSeparator {}
+            MenuItem {
+                text: "Delete Clip (Del)"
+                onTriggered: {
+                    session.deleteClip(clipRoot.clipId)
+                    selection.clearSelection()
+                }
             }
         }
     }
@@ -861,7 +1110,10 @@ Rectangle {
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: selection.selectTransition(transBadge.transId)
+            onClicked: {
+                if (selection && typeof selection.selectTransition === 'function')
+                    selection.selectTransition(transBadge.transId)
+            }
         }
     }
 

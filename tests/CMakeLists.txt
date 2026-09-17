@@ -20,6 +20,7 @@ editor_test(test_smart_tools test_smart_tools.cpp)
 editor_test(test_stage5_engine test_stage5_engine.cpp)
 editor_test(test_export_job test_export_job.cpp)
 editor_test(test_jobs test_jobs.cpp)
+editor_test(test_capcut_draft test_capcut_draft.cpp)
 
 # Headless acceptance: build demo project, save, reopen, mock-export.
 add_test(NAME acceptance_demo
@@ -71,6 +72,46 @@ endif()
 # Kept strict on purpose — the smoke harness prints every QQmlError and
 # exits non-zero on objectCreationFailed, so new QML regressions fail here.
 if(ENABLE_QT_UI)
+    set(CMAKE_AUTOMOC ON)
+    add_executable(test_shell
+        test_shell.cpp
+        "${CMAKE_SOURCE_DIR}/src/shell/src/Session.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/src/ExportController.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/src/TimelineModel.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/src/ThumbnailProvider.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/src/Player.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/src/FrameCompositor.cpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/Session.hpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/ExportController.hpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/TimelineModel.hpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/ThumbnailProvider.hpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/Player.hpp"
+        "${CMAKE_SOURCE_DIR}/src/shell/include/shell/FrameCompositor.hpp"
+    )
+    target_include_directories(test_shell PRIVATE
+        support
+        "${CMAKE_SOURCE_DIR}/src/shell/include"
+        "${CMAKE_SOURCE_DIR}/src/export/ffmpeg/include"
+        "${CMAKE_SOURCE_DIR}/src/media/ffmpeg/include"
+    )
+    target_link_libraries(test_shell PRIVATE
+        core persist commands media render export effects ai
+        media_ffmpeg export_ffmpeg
+        Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Multimedia
+    )
+    if(MSVC)
+        target_compile_options(test_shell PRIVATE /W4 /WX /wd4702)
+    endif()
+    target_compile_definitions(test_shell PRIVATE
+        FIXTURE_MP4="${CMAKE_SOURCE_DIR}/research/fixtures/inspection-test.mp4"
+    )
+    ffmpeg_copy_runtime_dlls(test_shell)
+    add_test(NAME test_shell COMMAND test_shell)
+    set_tests_properties(test_shell PROPERTIES
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
     add_test(NAME qml_smoke COMMAND "$<TARGET_FILE:editor-ui>" --qml-smoke)
     set_tests_properties(qml_smoke PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

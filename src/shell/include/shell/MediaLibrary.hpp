@@ -13,7 +13,7 @@ class MediaLibrary final : public QAbstractListModel {
     Q_OBJECT
 
 public:
-    enum Roles { AssetIdRole = Qt::UserRole + 1, NameRole, KindRole, DurationSecRole, PathRole };
+    enum Roles { AssetIdRole = Qt::UserRole + 1, NameRole, KindRole, DurationSecRole, PathRole, IsMissingRole };
 
     explicit MediaLibrary(QObject* parent = nullptr);
 
@@ -25,6 +25,8 @@ public:
 
     Q_INVOKABLE void refresh();
     Q_INVOKABLE QString assetIdAt(int row) const;
+    Q_INVOKABLE bool isMissing(int row) const;
+    Q_INVOKABLE bool relinkAsset(const QString& assetId, const QString& newPath);
 
 private:
     struct Row {
@@ -33,6 +35,7 @@ private:
         QString kind;
         double durationSec = 0.0;
         QString path;
+        bool isMissing = false;
     };
     Session* session_ = nullptr;
     std::vector<Row> rows_;

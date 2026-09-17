@@ -34,6 +34,7 @@ QtObject {
     readonly property color dangerBg: "#4A1E20"
     readonly property color warning: "#F59E0B"
     readonly property color success: "#10B981"
+    readonly property color purple: "#A855F7"
 
     // CapCut Timeline Clip Colors (Exact from Screenshot)
     readonly property color clipVideo: "#1C4049"       // Slate cyan-teal video block
@@ -46,17 +47,43 @@ QtObject {
 
     // Typography
     readonly property color textPrimary: "#FFFFFF"     // Crisp white
-    readonly property color textSecondary: "#A0A0A8"   // Muted silver
-    readonly property color textTertiary: "#666670"    // Dark muted
-    readonly property color textDisabled: "#44444C"
+    readonly property color textSecondary: "#C4C4CD"   // High-contrast muted silver
+    readonly property color textTertiary: "#9494A0"    // Readable secondary gray
+    readonly property color textDisabled: "#555560"
     readonly property color textAccent: "#00C7D4"
 
-    readonly property string fontMono: "Consolas, 'Cascadia Code', 'JetBrains Mono', monospace"
-    readonly property string fontBody: "Segoe UI, -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+    // Valid single font family names for Qt font engine (not CSS comma lists)
+    readonly property string fontMono: "Consolas"
+    readonly property string fontBody: "Segoe UI"
+    readonly property string fontHeading: "Segoe UI"
+
+    // Standardized typography scale
+    readonly property int fontSizeMicro: 10
+    readonly property int fontSizeCaption: 11
+    readonly property int fontSizeBody: 12
+    readonly property int fontSizeHeading: 14
+    readonly property int fontSizeTitle: 16
+
+    // Hit targets and spacing
+    readonly property int controlHeightDefault: 32
+    readonly property int controlHeightCompact: 28
+    readonly property int iconSizeDefault: 16
+    readonly property int iconSizeCompact: 14
 
     // Radii
     readonly property int radiusSmall: 3
     readonly property int radiusMedium: 5
     readonly property int radiusLarge: 8
     readonly property int radiusPill: 999
+
+    // Timeline Specific Tokens
+    readonly property color rulerBg: "#141418"
+    readonly property color rulerTick: "#383844"
+    readonly property color rulerText: "#767684"
+    readonly property color playheadLaser: "#00C7D4"
+    readonly property color playheadHandle: "#00C7D4"
+    readonly property color playheadGlow: "#4D00C7D4"
+    readonly property color trackHeaderBg: "#18181C"
+    readonly property color trackLaneBg: "#121215"
+    readonly property color trackDivider: "#1E1E24"
 }

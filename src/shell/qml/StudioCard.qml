@@ -25,36 +25,42 @@ Rectangle {
         spacing: 8
 
         // Header
-        RowLayout {
-            id: headerRow
+        Item {
+            id: headerContainer
             Layout.fillWidth: true
-            spacing: 6
+            implicitHeight: headerRow.implicitHeight
 
-            Text {
-                visible: root.iconText !== ""
-                text: root.iconText
-                font.pixelSize: 13
-                color: Theme.accent
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            RowLayout {
+                id: headerRow
+                anchors.fill: parent
+                spacing: 6
 
-            Text {
-                text: root.title
-                font.family: Theme.fontBody
-                font.pixelSize: 12
-                font.weight: Font.DemiBold
-                color: Theme.textPrimary
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-                anchors.verticalCenter: parent.verticalCenter
-            }
+                Text {
+                    visible: root.iconText !== ""
+                    text: root.iconText
+                    font.pixelSize: 13
+                    color: Theme.accent
+                    Layout.alignment: Qt.AlignVCenter
+                }
 
-            Text {
-                visible: root.collapsible
-                text: root.collapsed ? "▶" : "▼"
-                font.pixelSize: 10
-                color: Theme.textTertiary
-                anchors.verticalCenter: parent.verticalCenter
+                Text {
+                    text: root.title
+                    font.family: Theme.fontBody
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                    color: Theme.textPrimary
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Text {
+                    visible: root.collapsible
+                    text: root.collapsed ? "▶" : "▼"
+                    font.pixelSize: 10
+                    color: Theme.textTertiary
+                    Layout.alignment: Qt.AlignVCenter
+                }
             }
 
             MouseArea {

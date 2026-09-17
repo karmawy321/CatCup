@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 using namespace editor;
 
@@ -85,6 +86,26 @@ core::Project makeDemo(bool withTitle) {
     p.activeSequenceId = "seq-1";
     CHECK(p.validate().isOk());
     return p;
+}
+
+core::Project makeShortVideoDemo() {
+    auto p = makeDemo(false);
+    auto& seq = p.sequences.front();
+    seq.clips.erase("c2");
+    seq.tracks[1].clipIds.clear();
+    seq.clips.at("c1").sourceOut = core::Rational(1, 30);
+    seq.width = 64;
+    seq.height = 64;
+    CHECK(p.validate().isOk());
+    return p;
+}
+
+void checkNoExportTemps(const std::string& out) {
+    const std::filesystem::path path(out);
+    const std::string prefix = path.filename().string() + ".tmp_export.";
+    for (const auto& entry : std::filesystem::directory_iterator(path.parent_path())) {
+        CHECK(entry.path().filename().string().find(prefix) != 0);
+    }
 }
 
 std::string shaOfFile(const std::string& path) {
@@ -222,6 +243,152 @@ TEST_CASE("mp4: effect visibly changes exported video") {
 
     CHECK(std::filesystem::exists(withEffect));
     CHECK(shaOfFile(withEffect) != shaOfFile(withoutEffect));
+}
+
+TEST_CASE("mp4: atomic overwrite protection preserves existing file if export cancelled") {
+    const std::string out = kTmp + "/s1_atomic_protect.mp4";
+    // Create an existing valid file with known content
+    {
+        std::ofstream f(out);
+        f << "PRE-EXISTING-FILE-CONTENT-SHOULD-NOT-BE-DESTROYED";
+    }
+    CHECK(std::filesystem::exists(out));
+
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = out;
+    std::atomic_bool cancel{true}; // cancelled before finish
+    auto r = exporter.run(makeDemo(false), "seq-1", opts, cancel, {});
+    CHECK(r.isErr());
+
+    // Existing file must still exist and be intact!
+    CHECK(std::filesystem::exists(out));
+    std::ifstream in(out);
+    std::string content;
+    in >> content;
+    CHECK_EQ(content, std::string("PRE-EXISTING-FILE-CONTENT-SHOULD-NOT-BE-DESTROYED"));
+    // Temp export file should NOT exist
+    checkNoExportTemps(out);
+}
+
+TEST_CASE("mp4: existing legacy temp sentinel survives cancellation and success") {
+    const std::string out = kTmp + "/s1_temp_sentinel.mp4";
+    const std::string sentinel = out + ".tmp_export.mp4";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    {
+        std::ofstream f(sentinel, std::ios::binary);
+        f << "EXISTING-TEMP-SENTINEL";
+        f.close();
+        CHECK(f.good());
+    }
+    const auto before = shaOfFile(sentinel);
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = out;
+    std::atomic_bool cancel{true};
+    auto r = exporter.run(makeShortVideoDemo(), "seq-1", opts, cancel, {});
+    CHECK(r.isErr());
+    CHECK_EQ(r.error(), std::string("cancelled"));
+    CHECK(!std::filesystem::exists(out));
+    CHECK_EQ(shaOfFile(sentinel), before);
+
+    cancel.store(false);
+    CHECK(exporter.run(makeShortVideoDemo(), "seq-1", opts, cancel, {}).isOk());
+    CHECK(std::filesystem::exists(out));
+    CHECK_EQ(shaOfFile(sentinel), before);
+    CHECK(std::filesystem::remove(sentinel));
+    checkNoExportTemps(out);
+}
+
+TEST_CASE("mp4: cancellation after last video frame preserves existing output") {
+    const std::string out = kTmp + "/s1_late_cancel.mp4";
+    {
+        std::ofstream f(out, std::ios::binary);
+        f << "EXISTING-OUTPUT";
+        f.close();
+        CHECK(f.good());
+    }
+    const auto before = shaOfFile(out);
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = out;
+    opts.allowOverwrite = true;
+    std::atomic_bool cancel{false};
+    bool reachedLastFrame = false;
+    bool reportedComplete = false;
+    auto r = exporter.run(makeShortVideoDemo(), "seq-1", opts, cancel, [&](double p) {
+        if (p >= 0.9 && p < 1.0) {
+            reachedLastFrame = true;
+            cancel.store(true);
+        }
+        if (p == 1.0) {
+            reportedComplete = true;
+        }
+    });
+    CHECK(reachedLastFrame);
+    CHECK(r.isErr());
+    CHECK_EQ(r.error(), std::string("cancelled"));
+    CHECK(!reportedComplete);
+    CHECK_EQ(shaOfFile(out), before);
+    checkNoExportTemps(out);
+}
+
+TEST_CASE("mp4: cancellation after commit still returns success") {
+    const std::string out = kTmp + "/s1_committed_cancel.mp4";
+    {
+        std::ofstream f(out, std::ios::binary);
+        f << "EXISTING-OUTPUT";
+        f.close();
+        CHECK(f.good());
+    }
+    const auto before = shaOfFile(out);
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = out;
+    opts.allowOverwrite = true;
+    std::atomic_bool cancel{false};
+    bool sawCommittedOutput = false;
+    auto r = exporter.run(makeShortVideoDemo(), "seq-1", opts, cancel, [&](double p) {
+        if (p == 1.0) {
+            sawCommittedOutput = std::filesystem::exists(out) && shaOfFile(out) != before;
+            cancel.store(true);
+        }
+    });
+    CHECK(cancel.load());
+    CHECK(sawCommittedOutput);
+    CHECK(r.isOk());
+    media_ffmpeg::FfmpegProber prober;
+    auto probed = prober.probe(out);
+    CHECK(probed.isOk());
+    CHECK(probed.value().hasVideo);
+    checkNoExportTemps(out);
+}
+
+TEST_CASE("mp4: unconfirmed destination appearing during export is preserved") {
+    const std::string out = kTmp + "/s1_commit_collision.mp4";
+    std::error_code ec;
+    std::filesystem::remove(out, ec);
+    export_ffmpeg::Mp4Exporter exporter;
+    export_ffmpeg::Mp4ExportOptions opts;
+    opts.outPath = out;
+    opts.allowOverwrite = false;
+    std::atomic_bool cancel{false};
+    std::string before;
+    auto r = exporter.run(makeShortVideoDemo(), "seq-1", opts, cancel, [&](double p) {
+        if (p >= 0.9 && before.empty()) {
+            std::ofstream f(out, std::ios::binary);
+            f << "NEW-DESTINATION-MUST-SURVIVE";
+            f.close();
+            CHECK(f.good());
+            before = shaOfFile(out);
+        }
+    });
+    CHECK(!before.empty());
+    CHECK(r.isErr());
+    CHECK(r.error().find("cannot commit final export file:") == 0);
+    CHECK_EQ(shaOfFile(out), before);
+    checkNoExportTemps(out);
 }
 
 int main() {

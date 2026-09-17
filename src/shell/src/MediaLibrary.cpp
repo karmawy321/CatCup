@@ -31,6 +31,7 @@ QVariant MediaLibrary::data(const QModelIndex& index, int role) const {
     case KindRole: return r.kind;
     case DurationSecRole: return r.durationSec;
     case PathRole: return r.path;
+    case IsMissingRole: return r.isMissing;
     default: return {};
     }
 }
@@ -42,6 +43,7 @@ QHash<int, QByteArray> MediaLibrary::roleNames() const {
         {KindRole, "assetKind"},
         {DurationSecRole, "durationSec"},
         {PathRole, "assetPath"},
+        {IsMissingRole, "isMissing"},
     };
 }
 
@@ -58,6 +60,7 @@ void MediaLibrary::refresh() {
                          : (asset.kind == core::AssetKind::Audio ? "audio" : "image");
             r.durationSec = static_cast<double>(asset.duration);
             r.path = QString::fromStdString(asset.path);
+            r.isMissing = !r.path.isEmpty() && !QFile::exists(r.path);
             rows_.push_back(std::move(r));
         }
     }
@@ -69,6 +72,20 @@ QString MediaLibrary::assetIdAt(int row) const {
         return {};
     }
     return rows_[static_cast<size_t>(row)].assetId;
+}
+
+bool MediaLibrary::isMissing(int row) const {
+    if (row < 0 || row >= static_cast<int>(rows_.size())) {
+        return false;
+    }
+    return rows_[static_cast<size_t>(row)].isMissing;
+}
+
+bool MediaLibrary::relinkAsset(const QString& assetId, const QString& newPath) {
+    if (session_ == nullptr) return false;
+    bool ok = session_->relinkAsset(assetId, newPath);
+    if (ok) refresh();
+    return ok;
 }
 
 } // namespace editor::shell

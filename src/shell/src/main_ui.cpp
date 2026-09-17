@@ -21,15 +21,30 @@
 #include <QQmlEngine>
 #include <QQmlError>
 #include <QQuickStyle>
+#include <QQuickWindow>
 #include <QTimer>
 
+#if defined(Q_OS_WIN)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <dwmapi.h>
+#endif
+
+#include <QIcon>
 #include <iostream>
 
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
-    app.setOrganizationName("native_editor");
-    app.setApplicationName("editor-ui");
+    app.setOrganizationName("CatCup");
+    app.setApplicationName("CatCup");
     QQuickStyle::setStyle("Basic"); // neutral base; themed in QML
+
+    app.setWindowIcon(QIcon(":/qt/qml/NativeEditor/assets/images/catcup_icon.png"));
 
     bool smoke = false;
     QString fileToOpen;
@@ -62,12 +77,19 @@ int main(int argc, char** argv) {
     // module (circular import -> objectCreationFailed).
     qmlRegisterType<editor::shell::PreviewItem>("EditorCpp", 1, 0, "PreviewItem");
 
+    bool hadCriticalWarnings = false;
     QQmlApplicationEngine engine;
     QObject::connect(
         &engine, &QQmlEngine::warnings, &app,
-        [](const QList<QQmlError>& warnings) {
+        [&hadCriticalWarnings](const QList<QQmlError>& warnings) {
             for (const QQmlError& w : warnings) {
                 std::cerr << "QML: " << qPrintable(w.toString()) << "\n";
+                const QString msg = w.description();
+                if (msg.contains("ReferenceError") || msg.contains("TypeError") ||
+                    msg.contains("Unable to assign [undefined]") ||
+                    msg.contains("is not defined") || msg.contains("Cannot assign to non-existent property")) {
+                    hadCriticalWarnings = true;
+                }
             }
         },
         Qt::DirectConnection);
@@ -87,12 +109,30 @@ int main(int argc, char** argv) {
     // (qmldir: Main 1.0 qml/Main.qml under :/qt/qml/NativeEditor/).
     engine.load(QUrl("qrc:/qt/qml/NativeEditor/qml/Main.qml"));
 
+#if defined(Q_OS_WIN)
+    for (auto* obj : engine.rootObjects()) {
+        if (auto* window = qobject_cast<QQuickWindow*>(obj)) {
+            HWND hwnd = reinterpret_cast<HWND>(window->winId());
+            if (hwnd) {
+                BOOL darkMode = TRUE;
+                // DWMWA_USE_IMMERSIVE_DARK_MODE (20 on Win10 20H1+ / Win11; 19 on older Win10)
+                DwmSetWindowAttribute(hwnd, 20, &darkMode, sizeof(darkMode));
+                DwmSetWindowAttribute(hwnd, 19, &darkMode, sizeof(darkMode));
+                COLORREF captionColor = RGB(0x1E, 0x1E, 0x22); // Theme.bgSidebar
+                DwmSetWindowAttribute(hwnd, 35, &captionColor, sizeof(captionColor));
+                COLORREF textColor = RGB(0xFF, 0xFF, 0xFF);
+                DwmSetWindowAttribute(hwnd, 36, &textColor, sizeof(textColor));
+            }
+        }
+    }
+#endif
+
     if (smoke) {
         // Let queued creation-failure delivery run, then report.
         QTimer::singleShot(500, &app, &QCoreApplication::quit);
         const int rc = app.exec();
-        if (loadFailed) {
-            std::cerr << "QML smoke: Main.qml failed to load (see warnings above)\n";
+        if (loadFailed || hadCriticalWarnings) {
+            std::cerr << "QML smoke: Main.qml failed to load clean (see warnings above)\n";
             return 2;
         }
         std::cout << "QML smoke: Main.qml loaded clean\n";

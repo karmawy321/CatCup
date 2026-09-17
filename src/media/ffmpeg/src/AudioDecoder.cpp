@@ -120,7 +120,24 @@ core::Result<void> AudioDecoder::seek(const core::Rational& t) {
     Impl& im = *impl_;
     const std::int64_t ts =
         ffmpeg_detail::secondsToAvTime(t < core::Rational(0) ? core::Rational(0) : t);
-    if (av_seek_frame(im.fmt, -1, ts, AVSEEK_FLAG_BACKWARD) < 0) {
+    int ret = -1;
+    if (im.streamIndex >= 0 && im.stream != nullptr) {
+        const int64_t streamTs = av_rescale_q(ts, AVRational{1, AV_TIME_BASE}, im.stream->time_base);
+        ret = av_seek_frame(im.fmt, im.streamIndex, streamTs, AVSEEK_FLAG_BACKWARD);
+        if (ret < 0) {
+            ret = av_seek_frame(im.fmt, im.streamIndex, streamTs, 0);
+        }
+    }
+    if (ret < 0) {
+        ret = av_seek_frame(im.fmt, -1, ts, AVSEEK_FLAG_BACKWARD);
+    }
+    if (ret < 0) {
+        ret = av_seek_frame(im.fmt, -1, ts, 0);
+    }
+    if (ret < 0 && ts > 0) {
+        ret = av_seek_frame(im.fmt, -1, 0, AVSEEK_FLAG_BACKWARD);
+    }
+    if (ret < 0) {
         return core::Result<void>::fail("audio seek failed");
     }
     avcodec_flush_buffers(im.codec);

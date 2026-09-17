@@ -4,6 +4,11 @@
 // after each command (S1); fine-grained incremental updates are S2 work.
 
 #include <QAbstractListModel>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 namespace editor::shell {
 
@@ -15,6 +20,7 @@ class TimelineModel final : public QAbstractListModel {
     Q_PROPERTY(double fps READ fps NOTIFY modelChanged)
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY modelChanged)
     Q_PROPERTY(QVariantList transitions READ transitions NOTIFY modelChanged)
+    Q_PROPERTY(int peaksVersion READ peaksVersion NOTIFY peaksVersionChanged)
 
 public:
     enum Roles {
@@ -28,6 +34,7 @@ public:
     };
 
     explicit TimelineModel(QObject* parent = nullptr);
+    ~TimelineModel() override;
 
     void setSession(Session* session);
 
@@ -37,6 +44,7 @@ public:
 
     double durationSec() const;
     double fps() const;
+    int peaksVersion() const { return peaksVersion_; }
     QVariantList tracks() const;
     QVariantList transitions() const { return transitions_; }
 
@@ -46,11 +54,23 @@ public:
     Q_INVOKABLE QVariantMap clipInfo(const QString& clipId) const;
     Q_INVOKABLE QVariantMap transitionInfo(const QString& transId) const;
     Q_INVOKABLE QString adjacentClipId(const QString& clipId, bool next) const;
+    Q_INVOKABLE QVariantList clipAudioPeaks(const QString& clipId, int barCount) const;
 
 signals:
     void modelChanged();
+    void peaksVersionChanged();
+    void audioPeaksReady(const QString& assetId);
 
 private:
+    friend class PeakDecodeTask;
+    std::string computeMediaKey(const std::string& assetId, const std::string& path) const;
+    void onPeaksDecoded(const std::string& mediaKey, const std::string& assetId, std::vector<float> peaks);
+
+    mutable std::mutex peakMutex_;
+    mutable std::unordered_map<std::string, std::vector<float>> peakCache_;
+    mutable std::unordered_set<std::string> inFlightKeys_;
+    int peaksVersion_ = 0;
+
     struct Row {
         QString clipId;
         QString trackId;

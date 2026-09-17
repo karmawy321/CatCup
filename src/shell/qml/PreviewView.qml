@@ -1,11 +1,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Effects
 import EditorCpp 1.0
 
 // CapCut Desktop 1:1 Player Viewport:
 // - Top header "Player - Timeline 01"
-// - Dark 16:9 Cinema Compositor viewport
+// - Dark 16:9 Cinema Compositor viewport with Live GPU MultiEffect
 // - CapCut bottom transport bar with cyan-teal timecode, centered Play/Pause,
 //   Ratio switcher (16:9, 9:16 TikTok, 1:1), Full quality pill, and fullscreen toggle.
 
@@ -13,6 +14,21 @@ Rectangle {
     id: root
     property alias preview: previewItem
     property double playheadSec: 0
+    property string currentAspectRatio: "16:9"
+
+    function seek(sec) {
+        var t = Math.max(0, sec)
+        if (player.durationSec > 0 && t > player.durationSec) {
+            t = player.durationSec
+        }
+        selection.setPlayheadSec(t)
+        if (player && typeof player.seekTo === 'function') {
+            player.seekTo(t)
+        }
+        if (!player.playing) {
+            previewItem.renderAt(t)
+        }
+    }
 
     color: Theme.bgApp
     border.color: Theme.borderSubtle
@@ -87,6 +103,7 @@ Rectangle {
             PreviewItem {
                 id: previewItem
                 anchors.fill: parent
+                layer.enabled: true
                 Component.onCompleted: {
                     previewItem.setSession(session)
                     previewItem.renderAt(0)
@@ -108,11 +125,66 @@ Rectangle {
                 Text {
                     id: aspectBadgeText
                     anchors.centerIn: parent
-                    text: session ? session.getSequenceAspectPreset() : "16:9"
+                    text: (session && typeof session.getSequenceAspectPreset === 'function') ? session.getSequenceAspectPreset() : root.currentAspectRatio
                     font.family: Theme.fontMono
                     font.pixelSize: 10
                     font.bold: true
                     color: Theme.accent
+                }
+            }
+        }
+
+        // ---- Mini Preview Scrubber Bar ----
+        Rectangle {
+            Layout.fillWidth: true
+            height: previewScrubMa.containsMouse || previewScrubMa.pressed ? 6 : 3
+            color: "#18181C"
+            clip: false
+            z: 10
+            Behavior on height { NumberAnimation { duration: 80 } }
+
+            // Progress Fill
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: (player.durationSec > 0) ? Math.min(parent.width, (root.playheadSec / player.durationSec) * parent.width) : 0
+                color: Theme.accent
+            }
+
+            // Scrubber Knob
+            Rectangle {
+                visible: previewScrubMa.containsMouse || previewScrubMa.pressed
+                x: (player.durationSec > 0) ? Math.max(0, Math.min(parent.width - 10, (root.playheadSec / player.durationSec) * parent.width - 5)) : 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: 10
+                height: 10
+                radius: 5
+                color: "#FFFFFF"
+                border.color: Theme.accent
+                border.width: 2
+            }
+
+            MouseArea {
+                id: previewScrubMa
+                anchors.fill: parent
+                anchors.topMargin: -4
+                anchors.bottomMargin: -4
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+
+                onPressed: (m) => {
+                    if (player.playing) player.pause()
+                    if (player.durationSec > 0) {
+                        var frac = Math.max(0, Math.min(1.0, m.x / width))
+                        seek(frac * player.durationSec)
+                    }
+                }
+                onPositionChanged: (m) => {
+                    if (pressed && player.durationSec > 0) {
+                        var frac = Math.max(0, Math.min(1.0, m.x / width))
+                        seek(frac * player.durationSec)
+                    }
                 }
             }
         }
@@ -165,8 +237,7 @@ Rectangle {
                     variant: "ghost"
                     onClicked: {
                         player.pause()
-                        selection.setPlayheadSec(0)
-                        previewItem.renderAt(0)
+                        seek(0)
                     }
                 }
 
@@ -175,9 +246,9 @@ Rectangle {
                     compact: true
                     variant: "ghost"
                     onClicked: {
+                        if (player.playing) player.pause()
                         var target = Math.max(0, root.playheadSec - 1.0 / 30.0)
-                        selection.setPlayheadSec(target)
-                        previewItem.renderAt(target)
+                        seek(target)
                     }
                 }
 
@@ -205,7 +276,12 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: player.toggle()
+                        onClicked: {
+                            if (!player.playing && player.durationSec > 0 && Math.abs(root.playheadSec - player.durationSec) < 0.05) {
+                                seek(0)
+                            }
+                            player.toggle()
+                        }
                     }
                 }
 
@@ -215,9 +291,9 @@ Rectangle {
                     compact: true
                     variant: "ghost"
                     onClicked: {
+                        if (player.playing) player.pause()
                         var target = root.playheadSec + 1.0 / 30.0
-                        selection.setPlayheadSec(target)
-                        previewItem.renderAt(target)
+                        seek(target)
                     }
                 }
 
@@ -256,7 +332,7 @@ Rectangle {
                         anchors.centerIn: parent
                         spacing: 4
                         Text {
-                            text: (session ? session.getSequenceAspectPreset() : "16:9") + " ▾"
+                            text: ((session && typeof session.getSequenceAspectPreset === 'function') ? session.getSequenceAspectPreset() : root.currentAspectRatio) + " ▾"
                             font.family: Theme.fontBody
                             font.pixelSize: 10
                             font.weight: Font.DemiBold
@@ -279,35 +355,45 @@ Rectangle {
                         MenuItem {
                             text: "16:9 (Landscape / YouTube)"
                             onTriggered: {
-                                session.setSequenceAspectPreset("16:9")
+                                root.currentAspectRatio = "16:9"
+                                if (session && typeof session.setSequenceAspectPreset === 'function')
+                                    session.setSequenceAspectPreset("16:9")
                                 previewItem.renderAt(root.playheadSec)
                             }
                         }
                         MenuItem {
                             text: "9:16 (TikTok / Shorts / Reels)"
                             onTriggered: {
-                                session.setSequenceAspectPreset("9:16")
+                                root.currentAspectRatio = "9:16"
+                                if (session && typeof session.setSequenceAspectPreset === 'function')
+                                    session.setSequenceAspectPreset("9:16")
                                 previewItem.renderAt(root.playheadSec)
                             }
                         }
                         MenuItem {
                             text: "1:1 (Square / Instagram)"
                             onTriggered: {
-                                session.setSequenceAspectPreset("1:1")
+                                root.currentAspectRatio = "1:1"
+                                if (session && typeof session.setSequenceAspectPreset === 'function')
+                                    session.setSequenceAspectPreset("1:1")
                                 previewItem.renderAt(root.playheadSec)
                             }
                         }
                         MenuItem {
-                            text: "4:3 (Classic TV)"
+                            text: "4:3 (Standard)"
                             onTriggered: {
-                                session.setSequenceAspectPreset("4:3")
+                                root.currentAspectRatio = "4:3"
+                                if (session && typeof session.setSequenceAspectPreset === 'function')
+                                    session.setSequenceAspectPreset("4:3")
                                 previewItem.renderAt(root.playheadSec)
                             }
                         }
                         MenuItem {
                             text: "21:9 (Ultrawide Cinema)"
                             onTriggered: {
-                                session.setSequenceAspectPreset("21:9")
+                                root.currentAspectRatio = "21:9"
+                                if (session && typeof session.setSequenceAspectPreset === 'function')
+                                    session.setSequenceAspectPreset("21:9")
                                 previewItem.renderAt(root.playheadSec)
                             }
                         }

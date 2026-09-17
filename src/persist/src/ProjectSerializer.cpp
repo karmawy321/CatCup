@@ -106,6 +106,7 @@ core::Result<JsonValue> projectToJson(const core::Project& project) {
             {"width", JsonValue(a.width)},
             {"height", JsonValue(a.height)},
             {"hash", JsonValue(a.hash)},
+            {"hasAudio", JsonValue(a.hasAudio)},
         }));
     }
     JsonArray sequences;
@@ -280,6 +281,11 @@ core::Result<core::Project> projectFromJson(const JsonValue& root) {
             }
             if (const auto f = ao->find("hash"); f != ao->end() && f->second.isString()) {
                 a.hash = f->second.asString();
+            }
+            if (const auto f = ao->find("hasAudio"); f != ao->end() && f->second.isBool()) {
+                a.hasAudio = f->second.asBool();
+            } else {
+                a.hasAudio = (a.kind == core::AssetKind::Audio);
             }
             project.assets.emplace(a.id, std::move(a));
         }

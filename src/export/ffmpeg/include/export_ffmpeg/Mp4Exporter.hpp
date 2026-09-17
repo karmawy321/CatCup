@@ -25,6 +25,9 @@ struct Mp4ExportOptions {
     int videoBitrateKbps = 8000;
     int audioBitrateKbps = 160;
     std::string x264Preset = "veryfast";
+    int overrideWidth = 0;
+    int overrideHeight = 0;
+    bool allowOverwrite = true;
 };
 
 class Mp4Exporter {

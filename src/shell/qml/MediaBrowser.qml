@@ -8,6 +8,8 @@ import QtQuick.Dialogs
 
 Rectangle {
     id: root
+    property var mainWindow: null
+    property string targetRelinkAssetId: ""
     color: Theme.bgSidebar
     border.color: Theme.borderSubtle
     border.width: 1
@@ -114,8 +116,7 @@ Rectangle {
                         font.pixelSize: 10
                         font.weight: Font.DemiBold
                         color: Theme.textTertiary
-                        anchors.left: parent.left
-                        anchors.leftMargin: 8
+                        Layout.leftMargin: 8
                     }
 
                     Rectangle {
@@ -181,8 +182,9 @@ Rectangle {
 
                 // ==================== TAB 0: MEDIA ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     // Header Row: + Import Pill & Search
@@ -212,6 +214,44 @@ Rectangle {
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: importDialog.open()
+                            }
+                        }
+
+                        // CapCut Draft Interop Pill Button
+                        Rectangle {
+                            implicitWidth: 96
+                            implicitHeight: 26
+                            radius: 13
+                            color: draftMouse.containsMouse ? Theme.bgHover : Theme.bgElevated
+                            border.color: Theme.borderMedium
+                            border.width: 1
+
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 4
+                                Text { text: "Draft"; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                                Text { text: "▾"; font.pixelSize: 9; color: Theme.textSecondary }
+                            }
+
+                            MouseArea {
+                                id: draftMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: draftMenu.open()
+                            }
+
+                            Menu {
+                                id: draftMenu
+                                y: parent.height + 4
+                                MenuItem {
+                                    text: "Import CapCut Draft…"
+                                    onTriggered: capcutDraftImportDialog.open()
+                                }
+                                MenuItem {
+                                    text: "Export CapCut Draft…"
+                                    onTriggered: capcutDraftExportDialog.open()
+                                }
                             }
                         }
 
@@ -257,9 +297,52 @@ Rectangle {
                         color: Theme.textTertiary
                     }
 
+                    // Empty Media Library Placeholder
+                    Rectangle {
+                        visible: mediaList.count === 0
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 6
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            spacing: 8
+                            width: parent.width - 24
+
+                            Text {
+                                text: "📁"
+                                font.pixelSize: 26
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+
+                            Text {
+                                text: "No Media Imported"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 12
+                                font.weight: Font.DemiBold
+                                color: Theme.textPrimary
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+
+                            Text {
+                                text: "Click [+ Import] above to load video or audio files into the project"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                color: Theme.textSecondary
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+                    }
+
                     // Media Cards List (CapCut Style)
                     ListView {
                         id: mediaList
+                        visible: mediaList.count > 0
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
@@ -278,8 +361,8 @@ Rectangle {
                                 Layout.preferredHeight: 74
                                 radius: 4
                                 color: ListView.isCurrentItem ? Theme.bgActive : (cardMouse.containsMouse ? Theme.bgHover : Theme.bgCard)
-                                border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
-                                border.width: 1
+                                border.color: isMissing ? Theme.danger : (ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium)
+                                border.width: isMissing ? 1.5 : 1
                                 clip: true
 
                                 Image {
@@ -307,6 +390,60 @@ Rectangle {
                                         font.family: Theme.fontBody
                                         font.pixelSize: 8
                                         color: "#FFFFFF"
+                                    }
+                                }
+
+                                // Top-Right "Offline / Lost" Chip
+                                Rectangle {
+                                    visible: isMissing
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 4
+                                    radius: 2
+                                    color: "#D9EF4444"
+                                    implicitWidth: lostBadge.implicitWidth + 8
+                                    implicitHeight: lostBadge.implicitHeight + 2
+
+                                    Text {
+                                        id: lostBadge
+                                        anchors.centerIn: parent
+                                        text: "⚠ Lost"
+                                        font.family: Theme.fontBody
+                                        font.pixelSize: 8
+                                        font.bold: true
+                                        color: "#FFFFFF"
+                                    }
+                                }
+
+                                // Center "Relink" Button when media is lost
+                                Rectangle {
+                                    visible: isMissing
+                                    anchors.centerIn: parent
+                                    radius: 4
+                                    color: "#EE16161A"
+                                    border.color: Theme.accent
+                                    border.width: 1
+                                    implicitWidth: relinkLabel.implicitWidth + 14
+                                    implicitHeight: 22
+                                    z: 5
+
+                                    Text {
+                                        id: relinkLabel
+                                        anchors.centerIn: parent
+                                        text: "Relink Media"
+                                        font.family: Theme.fontBody
+                                        font.pixelSize: 9
+                                        font.bold: true
+                                        color: Theme.accent
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            root.targetRelinkAssetId = assetId
+                                            relinkDialog.open()
+                                        }
                                     }
                                 }
 
@@ -382,8 +519,9 @@ Rectangle {
 
                 // ==================== TAB 1: AUDIO ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     Text { text: "Audio Library"; font.family: Theme.fontBody; font.pixelSize: 12; font.bold: true; color: Theme.textPrimary }
@@ -402,8 +540,9 @@ Rectangle {
 
                 // ==================== TAB 2: TEXT ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     Text { text: "Title Text"; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textSecondary }
@@ -443,8 +582,9 @@ Rectangle {
 
                 // ==================== TAB 3: EFFECTS ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     ListView {
@@ -454,19 +594,34 @@ Rectangle {
                         clip: true
                         spacing: 6
                         model: ListModel {
-                            ListElement { name: "Vignette"; typeName: "vignette"; desc: "Soft edge shading" }
-                            ListElement { name: "Box Blur"; typeName: "blur"; desc: "Gaussian blur filter" }
-                            ListElement { name: "Sharpen"; typeName: "sharpen"; desc: "Detail enhancement" }
-                            ListElement { name: "Chroma Key"; typeName: "chroma_key"; desc: "Green screen removal" }
-                            ListElement { name: "Warm Cinema"; typeName: "preset_warm"; desc: "Golden hour tones" }
-                            ListElement { name: "Cool Film"; typeName: "preset_cool"; desc: "Modern teal film look" }
-                            ListElement { name: "Black & White"; typeName: "preset_bw"; desc: "Classic monochrome" }
-                            ListElement { name: "Vibrant Punch"; typeName: "preset_vibrant"; desc: "High saturation pop" }
+                            // Cinematic & Film Look
+                            ListElement { name: "Letterbox 2.35:1"; typeName: "letterbox"; category: "Cinema"; desc: "CinemaScope 2.35:1 anamorphic black matte bars" }
+                            ListElement { name: "35mm Film Grain"; typeName: "film_grain"; category: "Cinema"; desc: "Kodak Vision3 analog 35mm organic film grain" }
+                            ListElement { name: "Cinematic Bloom"; typeName: "bloom"; category: "Cinema"; desc: "Black Pro-Mist specular highlight diffusion glow" }
+                            ListElement { name: "Split Toning"; typeName: "split_toning"; category: "Cinema"; desc: "Hollywood teal shadows & golden amber highlights" }
+                            ListElement { name: "Warm Cinema"; typeName: "preset_warm"; category: "Cinema"; desc: "Golden hour sunset movie tone" }
+                            ListElement { name: "Cool Film"; typeName: "preset_cool"; category: "Cinema"; desc: "Modern cinematic cool film tone" }
+                            ListElement { name: "Black & White"; typeName: "preset_bw"; category: "Cinema"; desc: "Classic high-contrast monochrome cinema look" }
+                            ListElement { name: "Vibrant Punch"; typeName: "preset_vibrant"; category: "Cinema"; desc: "Rich saturated cinematic pop" }
+
+                            // Optical & Lens
+                            ListElement { name: "Chromatic Aberration"; typeName: "chromatic_aberration"; category: "Lens"; desc: "Prism optical lens dispersion & RGB edge split" }
+                            ListElement { name: "Vignette"; typeName: "vignette"; category: "Lens"; desc: "Soft anamorphic edge shading" }
+                            ListElement { name: "Box Blur"; typeName: "blur"; category: "Lens"; desc: "Smooth defocus blur filter" }
+                            ListElement { name: "Sharpen"; typeName: "sharpen"; category: "Lens"; desc: "High-pass edge & detail enhancement" }
+                            ListElement { name: "Chroma Key"; typeName: "chroma_key"; category: "Lens"; desc: "Green screen studio keying & spill suppression" }
+
+                            // Stylize & Retro
+                            ListElement { name: "Retro VHS Tape"; typeName: "retro_vhs"; category: "Retro"; desc: "80s CRT scanlines, color bleed & analog tape noise" }
+                            ListElement { name: "Posterize"; typeName: "posterize"; category: "Stylize"; desc: "Graphic novel & pop-art color quantization" }
+                            ListElement { name: "Invert Negative"; typeName: "invert"; category: "Stylize"; desc: "Film negative inversion & impact flash" }
+                            ListElement { name: "Edge Detect"; typeName: "edge_detect"; category: "Stylize"; desc: "Sobel gradient sketch & neon outlines" }
+                            ListElement { name: "Mirror Reflection"; typeName: "mirror"; category: "Stylize"; desc: "Horizontal, vertical, & 4-way kaleidoscope mirror" }
                         }
 
                         delegate: Rectangle {
                             width: fxList.width
-                            height: 44
+                            height: 48
                             radius: 4
                             color: ListView.isCurrentItem ? Theme.bgActive : (fxM.containsMouse ? Theme.bgHover : Theme.bgCard)
                             border.color: ListView.isCurrentItem ? Theme.borderFocus : Theme.borderMedium
@@ -480,8 +635,18 @@ Rectangle {
                                 Text { text: "✦"; font.pixelSize: 12; color: Theme.accent }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    spacing: 1
-                                    Text { text: name; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                                    spacing: 2
+                                    RowLayout {
+                                        spacing: 6
+                                        Text { text: name; font.family: Theme.fontBody; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.textPrimary }
+                                        Rectangle {
+                                            implicitWidth: catT.implicitWidth + 8
+                                            implicitHeight: 14
+                                            radius: 3
+                                            color: Theme.bgElevated
+                                            Text { id: catT; anchors.centerIn: parent; text: category; font.family: Theme.fontBody; font.pixelSize: 8; color: Theme.textTertiary }
+                                        }
+                                    }
                                     Text { text: desc; font.family: Theme.fontBody; font.pixelSize: 9; color: Theme.textTertiary; elide: Text.ElideRight; Layout.fillWidth: true }
                                 }
                             }
@@ -491,7 +656,10 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: fxList.currentIndex = index
+                                onClicked: {
+                                    fxList.currentIndex = index
+                                    applyFx()
+                                }
                                 onDoubleClicked: applyFx()
                             }
                         }
@@ -501,15 +669,16 @@ Rectangle {
                         text: "Apply Effect"
                         variant: "primary"
                         Layout.fillWidth: true
-                        enabled: fxList.currentIndex >= 0 && selection.selectedClipId !== ""
+                        enabled: fxList.currentIndex >= 0
                         onClicked: applyFx()
                     }
                 }
 
                 // ==================== TAB 4: TRANSITIONS ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     ListView {
@@ -522,6 +691,12 @@ Rectangle {
                             ListElement { name: "Crossfade"; typeName: "crossfade"; desc: "Smooth linear dissolve" }
                             ListElement { name: "Dip to Black"; typeName: "dip_black"; desc: "Fade through black" }
                             ListElement { name: "Dip to White"; typeName: "dip_white"; desc: "Flash through white" }
+                            ListElement { name: "Iris Circle"; typeName: "iris_circle"; desc: "Classic Hollywood circular iris reveal" }
+                            ListElement { name: "Barn Doors (H)"; typeName: "barn_doors_h"; desc: "Center stage curtains opening" }
+                            ListElement { name: "Barn Doors (V)"; typeName: "barn_doors_v"; desc: "Vertical center split opening" }
+                            ListElement { name: "Zoom In"; typeName: "zoom_in"; desc: "Dynamic cinematic punch zoom transition" }
+                            ListElement { name: "Zoom Out"; typeName: "zoom_out"; desc: "Cinematic zoom pull transition" }
+                            ListElement { name: "Flash Dissolve"; typeName: "flash_dissolve"; desc: "High-exposure warm gold flash dissolve" }
                             ListElement { name: "Wipe Left"; typeName: "wipe_left"; desc: "Slide left transition" }
                             ListElement { name: "Wipe Right"; typeName: "wipe_right"; desc: "Slide right transition" }
                             ListElement { name: "Wipe Up"; typeName: "wipe_up"; desc: "Slide up transition" }
@@ -555,8 +730,10 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: transList.currentIndex = index
-                                onDoubleClicked: applyTrans()
+                                onClicked: {
+                                    transList.currentIndex = index
+                                    applyTrans()
+                                }
                             }
                         }
                     }
@@ -565,15 +742,16 @@ Rectangle {
                         text: "Apply Transition"
                         variant: "primary"
                         Layout.fillWidth: true
-                        enabled: transList.currentIndex >= 0 && selection.selectedClipId !== ""
+                        enabled: transList.currentIndex >= 0
                         onClicked: applyTrans()
                     }
                 }
 
                 // ==================== TAB 5: CAPTIONS ====================
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.margins: 8
                     spacing: 8
 
                     Text { text: "Auto Captions"; font.family: Theme.fontBody; font.pixelSize: 12; font.bold: true; color: Theme.textPrimary }
@@ -736,27 +914,66 @@ Rectangle {
     }
 
     function applyFx() {
-        if (fxList.currentIndex < 0 || selection.selectedClipId === "") return
+        if (fxList.currentIndex < 0) return
         var item = fxList.model.get(fxList.currentIndex)
-        if (item.typeName === "preset_warm") session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.15, 1.1, 0.3, 0.05)
-        else if (item.typeName === "preset_cool") session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.15, 0.95, -0.3, -0.05)
-        else if (item.typeName === "preset_bw") session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.2, 0.0, 0.0, 0.0)
-        else if (item.typeName === "preset_vibrant") session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.2, 1.45, 0.05, 0.0)
-        else session.addClipEffect(selection.selectedClipId, item.typeName)
+
+        if (selection.selectedClipId === "") {
+            footerBar.info("ℹ Select a clip on the timeline to apply " + item.name + " effect")
+            return
+        }
+
+        if (item.typeName === "preset_warm") {
+            session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.15, 1.1, 0.3, 0.05)
+        } else if (item.typeName === "preset_cool") {
+            session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.15, 0.95, -0.3, -0.05)
+        } else if (item.typeName === "preset_bw") {
+            session.setClipColorAdjust(selection.selectedClipId, 0.0, 1.2, 0.0, 0.0, 0.0)
+        } else if (item.typeName === "preset_vibrant") {
+            session.setClipColorAdjust(selection.selectedClipId, 0.05, 1.2, 1.45, 0.05, 0.0)
+        } else if (typeof session.addClipEffect === 'function') {
+            session.addClipEffect(selection.selectedClipId, item.typeName)
+        }
+
+        footerBar.info("✨ Applied " + item.name + " to selected clip")
     }
 
     function applyTrans() {
-        if (transList.currentIndex < 0 || selection.selectedClipId === "") return
+        if (transList.currentIndex < 0) return
         var item = transList.model.get(transList.currentIndex)
+
+        if (selection.selectedClipId === "") {
+            footerBar.info("ℹ Select a clip on the timeline to attach " + item.name + " transition")
+            return
+        }
+
+        if (typeof session.addTransition !== 'function') {
+            footerBar.info("ℹ Select adjacent clips on the timeline to add " + item.name + " transition")
+            return
+        }
+
         var clipInfo = timeline.clipInfo(selection.selectedClipId)
-        if (!clipInfo || !clipInfo.trackId) return
-        var nextClip = timeline.adjacentClipId(selection.selectedClipId, true)
-        var prevClip = timeline.adjacentClipId(selection.selectedClipId, false)
+        if (!clipInfo || !clipInfo.trackId) {
+            footerBar.error("Cannot add transition: could not determine track for clip")
+            return
+        }
+        var nextClip = (typeof timeline.adjacentClipId === 'function') ? timeline.adjacentClipId(selection.selectedClipId, true) : ""
+        var prevClip = (typeof timeline.adjacentClipId === 'function') ? timeline.adjacentClipId(selection.selectedClipId, false) : ""
         var fromId = selection.selectedClipId
         var toId = nextClip
         if (toId === "" && prevClip !== "") { fromId = prevClip; toId = selection.selectedClipId }
+        if (fromId === "" || toId === "" || fromId === toId) {
+            footerBar.error("Transitions require two adjacent clips on the same track.")
+            return
+        }
         var transId = session.addTransition(clipInfo.trackId, fromId, toId, item.typeName, 1.0, 0)
-        if (transId !== "") selection.selectTransition(transId)
+        if (transId !== "") {
+            if (typeof selection.selectTransition === 'function') {
+                selection.selectTransition(transId)
+            }
+            footerBar.info("⧖ Added " + item.name + " Transition")
+        } else {
+            footerBar.error("Failed to add transition between adjacent clips")
+        }
     }
 
     FileDialog {
@@ -783,5 +1000,53 @@ Rectangle {
         fileMode: FileDialog.SaveFile
         nameFilters: ["SubRip Subtitles (*.srt)"]
         onAccepted: session.exportSubtitlesFile(selectedFile)
+    }
+
+    FileDialog {
+        id: relinkDialog
+        title: "Relink Media File"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["Media Files (*.mp4 *.mov *.mkv *.mp3 *.wav *.aac *.png *.jpg *.jpeg)", "All files (*)"]
+        onAccepted: {
+            if (root.targetRelinkAssetId !== "") {
+                var ok = library.relinkAsset(root.targetRelinkAssetId, selectedFile)
+                if (ok) {
+                    footerBar.info("Relinked media successfully")
+                } else {
+                    footerBar.error("Failed to relink media")
+                }
+                root.targetRelinkAssetId = ""
+            }
+        }
+    }
+
+    FileDialog {
+        id: capcutDraftImportDialog
+        title: "Import CapCut Draft"
+        fileMode: FileDialog.OpenFile
+        nameFilters: ["CapCut Draft (draft_content.json)", "JSON files (*.json)", "All files (*)"]
+        onAccepted: {
+            var ok = session.importCapCutDraft(selectedFile)
+            if (ok) {
+                footerBar.info("Imported CapCut Draft successfully")
+            } else {
+                footerBar.error("Failed to import CapCut Draft")
+            }
+        }
+    }
+
+    FileDialog {
+        id: capcutDraftExportDialog
+        title: "Export CapCut Draft"
+        fileMode: FileDialog.SaveFile
+        nameFilters: ["CapCut Draft (draft_content.json)", "JSON files (*.json)"]
+        onAccepted: {
+            var ok = session.exportCapCutDraft(selectedFile)
+            if (ok) {
+                footerBar.info("Exported CapCut Draft successfully")
+            } else {
+                footerBar.error("Failed to export CapCut Draft")
+            }
+        }
     }
 }

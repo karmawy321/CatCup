@@ -9,6 +9,7 @@ extern "C" {
 }
 
 #include <cstring>
+#include <optional>
 
 namespace editor::media_ffmpeg {
 namespace {
@@ -117,7 +118,24 @@ core::Result<void> VideoDecoder::seek(const core::Rational& t) {
     }
     Impl& im = *impl_;
     const std::int64_t ts = ffmpeg_detail::secondsToAvTime(t < core::Rational(0) ? core::Rational(0) : t);
-    if (av_seek_frame(im.fmt, -1, ts, AVSEEK_FLAG_BACKWARD) < 0) {
+    int ret = -1;
+    if (im.streamIndex >= 0 && im.stream != nullptr) {
+        const int64_t streamTs = av_rescale_q(ts, AVRational{1, AV_TIME_BASE}, im.stream->time_base);
+        ret = av_seek_frame(im.fmt, im.streamIndex, streamTs, AVSEEK_FLAG_BACKWARD);
+        if (ret < 0) {
+            ret = av_seek_frame(im.fmt, im.streamIndex, streamTs, 0);
+        }
+    }
+    if (ret < 0) {
+        ret = av_seek_frame(im.fmt, -1, ts, AVSEEK_FLAG_BACKWARD);
+    }
+    if (ret < 0) {
+        ret = av_seek_frame(im.fmt, -1, ts, 0);
+    }
+    if (ret < 0 && ts > 0) {
+        ret = av_seek_frame(im.fmt, -1, 0, AVSEEK_FLAG_BACKWARD);
+    }
+    if (ret < 0) {
         return core::Result<void>::fail("seek failed");
     }
     avcodec_flush_buffers(im.codec);
@@ -157,6 +175,7 @@ core::Result<DecodedVideoFrame> VideoDecoder::nextFrame() {
     };
 
     // Drain any frames already queued in the codec first.
+    std::optional<DecodedVideoFrame> lastFrameBeforeTarget;
     while (true) {
         int rc = avcodec_receive_frame(im.codec, im.frame);
         if (rc == 0) {
@@ -165,10 +184,13 @@ core::Result<DecodedVideoFrame> VideoDecoder::nextFrame() {
                 return converted;
             }
             DecodedVideoFrame out = std::move(converted.value());
-            if (im.haveTarget && out.pts < im.target) {
-                continue; // drop pre-seek frame
+            if (im.haveTarget) {
+                if (out.pts < im.target) {
+                    lastFrameBeforeTarget = std::move(out);
+                    continue; // drop pre-seek frame
+                }
+                im.haveTarget = false;
             }
-            im.haveTarget = false;
             return R::ok(std::move(out));
         }
         if (rc != AVERROR(EAGAIN)) {
@@ -192,6 +214,11 @@ core::Result<DecodedVideoFrame> VideoDecoder::nextFrame() {
         if (rc < 0 && rc != AVERROR(EAGAIN)) {
             return R::fail("video decode failed: " + ffmpeg_detail::avErrorString(rc));
         }
+    }
+
+    if (im.haveTarget && lastFrameBeforeTarget.has_value()) {
+        im.haveTarget = false;
+        return R::ok(std::move(*lastFrameBeforeTarget));
     }
 
     if (im.eof) {

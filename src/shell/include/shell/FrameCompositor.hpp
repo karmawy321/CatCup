@@ -16,6 +16,7 @@
 #include <QSize>
 
 #include <map>
+#include <optional>
 
 namespace editor::shell {
 
@@ -30,6 +31,7 @@ private:
         std::string path;
         media_ffmpeg::VideoDecoder decoder;
         core::Rational lastDelivered{-1, 1};
+        std::optional<media_ffmpeg::DecodedVideoFrame> cachedFrame;
         bool ready = false;
     };
     std::map<core::Id, Reader> readers_;

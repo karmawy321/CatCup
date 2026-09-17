@@ -39,3 +39,16 @@ Thumbs.db
 *.user
 *.suo
 
+/demo.json
+/journey*.json
+/journey*.mp4
+/peaks_cache.json
+/screenshot_*.png
+/qml
+/src/shell/assets/fonts/CapCutSansText-*.otf
+/src/shell/assets/images/CClogo-w.png
+/src/shell/assets/images/logo_cc.png
+/src/shell/assets/images/defaultPlaceholder.png
+/src/shell/assets/images/lost-material.jpg
+/src/shell/assets/images/unsupported-material.jpg
+

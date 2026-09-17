@@ -8,8 +8,10 @@
 #include "core/ChangeBus.hpp"
 #include "core/Model.hpp"
 
+#include <QMap>
 #include <QObject>
 #include <QString>
+#include <QVariant>
 
 namespace editor::shell {
 
@@ -34,9 +36,9 @@ public:
     bool canUndo() const;
     bool canRedo() const;
     bool rippleMode() const { return rippleMode_; }
-    void setRippleMode(bool v);
+    Q_INVOKABLE void setRippleMode(bool v);
     bool snappingEnabled() const { return snappingEnabled_; }
-    void setSnappingEnabled(bool v);
+    Q_INVOKABLE void setSnappingEnabled(bool v);
 
     core::Project& project() { return project_; }
     const core::Project& project() const { return project_; }
@@ -47,6 +49,14 @@ public:
     Q_INVOKABLE bool openFile(const QUrl& url);
     Q_INVOKABLE bool save();
     Q_INVOKABLE bool saveAs(const QUrl& url);
+    Q_INVOKABLE bool saveRecovery();
+    Q_INVOKABLE bool hasRecovery() const;
+    Q_INVOKABLE QVariantMap recoveryInfo() const;
+    Q_INVOKABLE bool restoreRecovery();
+    Q_INVOKABLE void discardRecovery();
+    void clearRecovery();
+    static void setRecoveryDirectoryForTesting(const QString& dirPath);
+    static QString recoveryDirPath();
     /// Probe + register an asset. Returns the asset id, or "" on failure.
     Q_INVOKABLE QString importMedia(const QUrl& url);
     /// Append the asset as a clip at the end of its track. Returns clip id.
@@ -100,6 +110,20 @@ public:
     Q_INVOKABLE QString getSequenceAspectPreset() const;
     Q_INVOKABLE bool normalizeClipAudio(const QString& clipId, double targetLufs = -14.0);
     Q_INVOKABLE bool denoiseClipAudio(const QString& clipId, double rumbleCutoffHz = 80.0);
+    Q_INVOKABLE bool extractAudioFromClip(const QString& clipId);
+    Q_INVOKABLE QString extractAudioToFile(const QString& clipId, const QString& destinationPath = "");
+    Q_INVOKABLE bool clipHasAudio(const QString& clipId) const;
+    Q_INVOKABLE bool setTrackMuted(const QString& trackId, bool muted);
+    Q_INVOKABLE bool setClipBlendMode(const QString& clipId, const QString& mode);
+    Q_INVOKABLE bool setClipHighlightsShadows(const QString& clipId, double highlights, double shadows);
+    Q_INVOKABLE bool setClipColorWheels(const QString& clipId, double liftY, double gammaY, double gainY,
+                                        double offsetR, double offsetG, double offsetB, double lumaMix);
+    Q_INVOKABLE bool importCapCutDraft(const QUrl& url);
+    Q_INVOKABLE bool exportCapCutDraft(const QUrl& url);
+    Q_INVOKABLE bool relinkAsset(const QString& assetId, const QString& newPath);
+    Q_INVOKABLE int sequenceWidth() const;
+    Q_INVOKABLE int sequenceHeight() const;
+    Q_INVOKABLE double sequenceFps() const;
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
 
@@ -107,6 +131,7 @@ signals:
     void projectChanged();
     void rippleModeChanged();
     void snappingEnabledChanged();
+    void autosaveFailed(const QString& message);
     void error(const QString& message);
 
 private:

@@ -18,10 +18,34 @@ Rectangle {
 
     property var info: selection.selectedClipId !== ""
         ? timeline.clipInfo(selection.selectedClipId) : null
-    property var transInfo: selection.selectedTransitionId !== ""
+    property var transInfo: (selection.selectedTransitionId !== "" && typeof timeline.transitionInfo === 'function')
         ? timeline.transitionInfo(selection.selectedTransitionId) : null
 
+    function refresh() {
+        info = (selection && selection.selectedClipId !== "")
+            ? timeline.clipInfo(selection.selectedClipId) : null
+        transInfo = (selection && selection.selectedTransitionId !== "" && typeof timeline.transitionInfo === 'function')
+            ? timeline.transitionInfo(selection.selectedTransitionId) : null
+    }
+
+    Connections {
+        target: selection
+        function onSelectedClipIdChanged() { root.refresh() }
+        function onSelectedTransitionIdChanged() { root.refresh() }
+    }
+
+    Connections {
+        target: timeline
+        function onModelChanged() { root.refresh() }
+    }
+
+    Connections {
+        target: session
+        function onProjectChanged() { root.refresh() }
+    }
+
     property int activeTab: 0 // 0: Details, 1: Video, 2: Audio, 3: Speed, 4: Adjustment
+    property var mainWindow: null
 
     ColumnLayout {
         anchors.fill: parent
@@ -52,7 +76,8 @@ Rectangle {
                             { name: "Video", id: 1 },
                             { name: "Audio", id: 2 },
                             { name: "Speed", id: 3 },
-                            { name: "Adjustment", id: 4 }
+                            { name: "Adjustment", id: 4 },
+                            { name: "Effects", id: 5 }
                         ]
 
                         delegate: Rectangle {
@@ -95,14 +120,15 @@ Rectangle {
 
         // ---- Tab Body Content ----
         ScrollView {
+            id: inspectorScrollView
             Layout.fillWidth: true
             Layout.fillHeight: true
-            anchors.margins: 10
             contentWidth: availableWidth
             clip: true
 
             ColumnLayout {
-                width: root.availableWidth - 20
+                width: Math.max(100, inspectorScrollView.availableWidth - 20)
+                x: 10
                 spacing: 12
 
                 // ==================== 0. DETAILS VIEW (Exact CapCut Replication) ====================
@@ -164,7 +190,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Text { text: "Size"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
                                 Text {
-                                    text: "1920×1080 (" + (session ? session.getSequenceAspectPreset() : "16:9") + ")"
+                                    text: (session ? session.sequenceWidth() + "×" + session.sequenceHeight() : "1920×1080") + " (" + ((session && typeof session.getSequenceAspectPreset === 'function') ? session.getSequenceAspectPreset() : "16:9") + ")"
                                     font.family: Theme.fontMono; font.pixelSize: 11; color: Theme.textPrimary
                                     Layout.fillWidth: true
                                 }
@@ -175,7 +201,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Text { text: "Frame rate"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textTertiary; Layout.preferredWidth: 80 }
                                 Text {
-                                    text: "30.00 fps"
+                                    text: (session ? session.sequenceFps().toFixed(2) : "30.00") + " fps"
                                     font.family: Theme.fontMono; font.pixelSize: 11; color: Theme.textPrimary
                                     Layout.fillWidth: true
                                 }
@@ -218,7 +244,7 @@ Rectangle {
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             onClicked: {
-                                if (root.info) root.activeTab = 1
+                                seqDialog.open()
                             }
                         }
                     }
@@ -308,6 +334,34 @@ Rectangle {
                         visible: root.info !== null && root.info.clipId !== undefined
                         title: "Blend & Fades"
                         Layout.fillWidth: true
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: "Blend Mode"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 11
+                                color: Theme.textSecondary
+                                Layout.preferredWidth: 80
+                            }
+                            ComboBox {
+                                id: blendCombo
+                                Layout.fillWidth: true
+                                model: ["Normal", "Screen", "Multiply", "Overlay", "Darken", "Lighten", "Color Burn", "Linear Burn", "Color Dodge", "Soft Light"]
+                                readonly property var modeValues: ["normal", "screen", "multiply", "overlay", "darken", "lighten", "color_burn", "linear_burn", "color_dodge", "soft_light"]
+                                currentIndex: {
+                                    if (!root.info || !root.info.blendMode) return 0
+                                    var idx = modeValues.indexOf(root.info.blendMode)
+                                    return idx >= 0 ? idx : 0
+                                }
+                                onActivated: (idx) => {
+                                    if (selection.selectedClipId !== "") {
+                                        session.setClipBlendMode(selection.selectedClipId, modeValues[idx])
+                                    }
+                                }
+                            }
+                        }
 
                         StudioSlider {
                             label: "Opacity"
@@ -420,6 +474,35 @@ Rectangle {
                             }
                         }
                     }
+
+                    // Extract Audio Quick Action in Video Tab
+                    StudioCard {
+                        visible: root.info !== null && root.info.kind === "video" && (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(selection.selectedClipId))
+                        title: "Audio Extraction"
+                        iconText: "♫"
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "Extract and separate the audio stream onto an independent audio track on the timeline."
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textTertiary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        StudioButton {
+                            text: "Extract Audio to Track (A1)"
+                            iconText: "♫⇥"
+                            variant: "primary"
+                            Layout.fillWidth: true
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.extractAudioFromClip(selection.selectedClipId)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // ==================== 2. AUDIO TAB (LUFS Normalization & Voice Cleanup) ====================
@@ -427,6 +510,47 @@ Rectangle {
                     visible: root.activeTab === 2
                     Layout.fillWidth: true
                     spacing: 10
+
+                    StudioCard {
+                        title: "Audio Extraction & Separation"
+                        iconText: "♫"
+                        Layout.fillWidth: true
+
+                        Text {
+                            text: "Decouple video audio onto independent timeline tracks or export to pristine 48kHz WAV audio."
+                            font.family: Theme.fontBody
+                            font.pixelSize: 10
+                            color: Theme.textTertiary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        StudioButton {
+                            text: "Extract Audio to Timeline"
+                            iconText: "♫⇥"
+                            variant: "primary"
+                            Layout.fillWidth: true
+                            enabled: selection.selectedClipId !== "" && (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(selection.selectedClipId))
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.extractAudioFromClip(selection.selectedClipId)
+                                }
+                            }
+                        }
+
+                        StudioButton {
+                            text: "Export Audio to WAV File"
+                            iconText: "⇣"
+                            variant: "secondary"
+                            Layout.fillWidth: true
+                            enabled: selection.selectedClipId !== "" && (typeof session.clipHasAudio !== 'function' || session.clipHasAudio(selection.selectedClipId))
+                            onClicked: {
+                                if (selection.selectedClipId !== "") {
+                                    session.extractAudioToFile(selection.selectedClipId)
+                                }
+                            }
+                        }
+                    }
 
                     StudioCard {
                         title: "Loudness & Dynamics"
@@ -590,14 +714,503 @@ Rectangle {
                             iconText: "↺"
                             variant: "ghost"
                             Layout.fillWidth: true
-                            onClicked: applyColor(0.0, 1.0, 1.0, 0.0, 0.0)
+                            onClicked: {
+                                applyColor(0.0, 1.0, 1.0, 0.0, 0.0)
+                            }
+                        }
+                    }
+
+                    // Highlights & Shadows (CapCut Curve Adjustments)
+                    StudioCard {
+                        visible: root.info !== null && root.info.clipId !== undefined
+                        title: "Highlights & Shadows"
+                        iconText: "◐"
+                        Layout.fillWidth: true
+
+                        StudioSlider {
+                            label: "Highlights"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.highlights !== undefined ? root.info.highlights : 0.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => {
+                                var s = root.info && root.info.shadows !== undefined ? root.info.shadows : 0.0
+                                session.setClipHighlightsShadows(selection.selectedClipId, v, s)
+                            }
+                        }
+
+                        StudioSlider {
+                            label: "Shadows"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.shadows !== undefined ? root.info.shadows : 0.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => {
+                                var h = root.info && root.info.highlights !== undefined ? root.info.highlights : 0.0
+                                session.setClipHighlightsShadows(selection.selectedClipId, h, v)
+                            }
+                        }
+                    }
+
+                    // Primary Color Wheels (CapCut primary_wheel_v1)
+                    StudioCard {
+                        visible: root.info !== null && root.info.clipId !== undefined
+                        title: "Primary Color Wheels"
+                        iconText: "◎"
+                        Layout.fillWidth: true
+
+                        StudioSlider {
+                            label: "Lift Y"
+                            from: -1.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.liftY !== undefined ? root.info.liftY : 0.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => applyWheels(v, undefined, undefined, undefined)
+                        }
+
+                        StudioSlider {
+                            label: "Gamma Y"
+                            from: 0.1
+                            to: 4.0
+                            stepSize: 0.02
+                            value: root.info && root.info.gammaY !== undefined ? root.info.gammaY : 1.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => applyWheels(undefined, v, undefined, undefined)
+                        }
+
+                        StudioSlider {
+                            label: "Gain Y"
+                            from: 0.0
+                            to: 4.0
+                            stepSize: 0.05
+                            value: root.info && root.info.gainY !== undefined ? root.info.gainY : 1.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => applyWheels(undefined, undefined, v, undefined)
+                        }
+
+                        StudioSlider {
+                            label: "Luma Mix"
+                            from: 0.0
+                            to: 1.0
+                            stepSize: 0.02
+                            value: root.info && root.info.lumaMix !== undefined ? root.info.lumaMix : 1.0
+                            decimals: 2
+                            Layout.fillWidth: true
+                            onApply: (v) => applyWheels(undefined, undefined, undefined, v)
+                        }
+                    }
+                }
+
+                // ==================== 5. EFFECTS TAB (Applied Clip Effects Stack) ====================
+                ColumnLayout {
+                    visible: root.activeTab === 5
+                    Layout.fillWidth: true
+                    spacing: 10
+
+                    // Empty Selection Notice
+                    Rectangle {
+                        visible: root.info === null || root.info.clipId === undefined
+                        Layout.fillWidth: true
+                        height: 80
+                        radius: 6
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Select a video or image clip on the timeline"
+                            font.family: Theme.fontBody
+                            font.pixelSize: 11
+                            color: Theme.textSecondary
+                        }
+                    }
+
+                    // Empty Effects Notice
+                    Rectangle {
+                        visible: root.info !== null && root.info.clipId !== undefined && (!root.info.effects || root.info.effects.length === 0)
+                        Layout.fillWidth: true
+                        height: 100
+                        radius: 6
+                        color: Theme.bgCard
+                        border.color: Theme.borderMedium
+                        border.width: 1
+
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            spacing: 6
+                            Text {
+                                text: "✦ No Effects Applied"
+                                font.family: Theme.fontBody
+                                font.pixelSize: 12
+                                font.bold: true
+                                color: Theme.textPrimary
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                            Text {
+                                text: "Add cinematic effects from the Effects library in the left browser."
+                                font.family: Theme.fontBody
+                                font.pixelSize: 10
+                                color: Theme.textTertiary
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+                        }
+                    }
+
+                    // Repeater for all applied effects on this clip
+                    Repeater {
+                        model: (root.info && root.info.effects) ? root.info.effects : []
+                        delegate: StudioCard {
+                            id: effCard
+                            Layout.fillWidth: true
+                            readonly property int effIdx: index
+                            readonly property var effData: modelData
+                            readonly property string effType: modelData.type || ""
+                            title: {
+                                if (effType === "letterbox") return "Letterbox 2.35:1"
+                                if (effType === "film_grain") return "35mm Film Grain"
+                                if (effType === "chromatic_aberration") return "Chromatic Aberration"
+                                if (effType === "bloom") return "Cinematic Bloom"
+                                if (effType === "split_toning") return "Split Toning (Teal & Orange)"
+                                if (effType === "retro_vhs") return "Retro VHS Tape"
+                                if (effType === "posterize") return "Posterize"
+                                if (effType === "invert") return "Invert Negative"
+                                if (effType === "edge_detect") return "Edge Detect"
+                                if (effType === "mirror") return "Mirror Reflection"
+                                if (effType === "vignette") return "Vignette"
+                                if (effType === "blur") return "Blur"
+                                if (effType === "sharpen") return "Sharpen"
+                                if (effType === "chroma_key") return "Chroma Key"
+                                return effType
+                            }
+                            iconText: "✦"
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                Item { Layout.fillWidth: true }
+                                StudioButton {
+                                    text: "Remove"
+                                    iconText: "×"
+                                    variant: "danger"
+                                    compact: true
+                                    onClicked: {
+                                        if (selection.selectedClipId !== "") {
+                                            session.removeClipEffect(selection.selectedClipId, effIdx)
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Letterbox
+                            ColumnLayout {
+                                visible: effType === "letterbox"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Bar Height"
+                                    from: 0.0
+                                    to: 0.4
+                                    stepSize: 0.01
+                                    value: effData.params && effData.params.barHeight !== undefined ? effData.params.barHeight : 0.12
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "barHeight", v)
+                                }
+                                StudioSlider {
+                                    label: "Edge Feather"
+                                    from: 0.0
+                                    to: 0.1
+                                    stepSize: 0.005
+                                    value: effData.params && effData.params.feather !== undefined ? effData.params.feather : 0.0
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "feather", v)
+                                }
+                            }
+
+                            // Film Grain
+                            ColumnLayout {
+                                visible: effType === "film_grain"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Intensity"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.intensity !== undefined ? effData.params.intensity : 0.25
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "intensity", v)
+                                }
+                                StudioSlider {
+                                    label: "Grain Size"
+                                    from: 1.0
+                                    to: 4.0
+                                    stepSize: 0.5
+                                    value: effData.params && effData.params.size !== undefined ? effData.params.size : 1.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "size", v)
+                                }
+                            }
+
+                            // Chromatic Aberration
+                            ColumnLayout {
+                                visible: effType === "chromatic_aberration"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Shift X"
+                                    from: -30.0
+                                    to: 30.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.shiftX !== undefined ? effData.params.shiftX : 5.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "shiftX", v)
+                                }
+                                StudioSlider {
+                                    label: "Shift Y"
+                                    from: -30.0
+                                    to: 30.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.shiftY !== undefined ? effData.params.shiftY : 0.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "shiftY", v)
+                                }
+                            }
+
+                            // Cinematic Bloom
+                            ColumnLayout {
+                                visible: effType === "bloom"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Threshold"
+                                    from: 0.2
+                                    to: 0.95
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.threshold !== undefined ? effData.params.threshold : 0.65
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "threshold", v)
+                                }
+                                StudioSlider {
+                                    label: "Radius"
+                                    from: 2.0
+                                    to: 40.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.radius !== undefined ? effData.params.radius : 12.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "radius", v)
+                                }
+                                StudioSlider {
+                                    label: "Glow Intensity"
+                                    from: 0.0
+                                    to: 2.0
+                                    stepSize: 0.05
+                                    value: effData.params && effData.params.intensity !== undefined ? effData.params.intensity : 0.7
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "intensity", v)
+                                }
+                            }
+
+                            // Split Toning
+                            ColumnLayout {
+                                visible: effType === "split_toning"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Shadow Teal"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.shadowTeal !== undefined ? effData.params.shadowTeal : 0.4
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "shadowTeal", v)
+                                }
+                                StudioSlider {
+                                    label: "Highlight Orange"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.highlightOrange !== undefined ? effData.params.highlightOrange : 0.4
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "highlightOrange", v)
+                                }
+                            }
+
+                            // Retro VHS
+                            ColumnLayout {
+                                visible: effType === "retro_vhs"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Scanlines"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.scanlines !== undefined ? effData.params.scanlines : 0.35
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "scanlines", v)
+                                }
+                                StudioSlider {
+                                    label: "Color Bleed"
+                                    from: 0.0
+                                    to: 15.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.colorBleed !== undefined ? effData.params.colorBleed : 3.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "colorBleed", v)
+                                }
+                            }
+
+                            // Posterize
+                            ColumnLayout {
+                                visible: effType === "posterize"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Levels"
+                                    from: 2.0
+                                    to: 32.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.levels !== undefined ? effData.params.levels : 6.0
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "levels", v)
+                                }
+                            }
+
+                            // Invert
+                            ColumnLayout {
+                                visible: effType === "invert"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Intensity"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.intensity !== undefined ? effData.params.intensity : 1.0
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "intensity", v)
+                                }
+                            }
+
+                            // Edge Detect
+                            ColumnLayout {
+                                visible: effType === "edge_detect"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Intensity"
+                                    from: 0.1
+                                    to: 3.0
+                                    stepSize: 0.1
+                                    value: effData.params && effData.params.intensity !== undefined ? effData.params.intensity : 1.0
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "intensity", v)
+                                }
+                            }
+
+                            // Mirror Reflection
+                            ColumnLayout {
+                                visible: effType === "mirror"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "Mirror Mode"; font.family: Theme.fontBody; font.pixelSize: 11; color: Theme.textSecondary; Layout.preferredWidth: 80 }
+                                    ComboBox {
+                                        Layout.fillWidth: true
+                                        model: ["Horizontal Flip", "Vertical Flip", "Center Mirror H", "Center Mirror V", "Quad Kaleidoscope"]
+                                        currentIndex: effData.params && effData.params.mode !== undefined ? Math.floor(effData.params.mode) : 0
+                                        onActivated: (idx) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "mode", idx)
+                                    }
+                                }
+                            }
+
+                            // Vignette
+                            ColumnLayout {
+                                visible: effType === "vignette"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Intensity"
+                                    from: 0.0
+                                    to: 1.0
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.intensity !== undefined ? effData.params.intensity : 0.5
+                                    unit: "%"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "intensity", v)
+                                }
+                                StudioSlider {
+                                    label: "Radius"
+                                    from: 0.1
+                                    to: 1.5
+                                    stepSize: 0.02
+                                    value: effData.params && effData.params.radius !== undefined ? effData.params.radius : 0.7
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "radius", v)
+                                }
+                            }
+
+                            // Blur
+                            ColumnLayout {
+                                visible: effType === "blur"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Radius"
+                                    from: 1.0
+                                    to: 50.0
+                                    stepSize: 1.0
+                                    value: effData.params && effData.params.radius !== undefined ? effData.params.radius : 10.0
+                                    unit: "px"
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "radius", v)
+                                }
+                            }
+
+                            // Sharpen
+                            ColumnLayout {
+                                visible: effType === "sharpen"
+                                Layout.fillWidth: true
+                                spacing: 8
+                                StudioSlider {
+                                    label: "Amount"
+                                    from: 0.1
+                                    to: 2.0
+                                    stepSize: 0.05
+                                    value: effData.params && effData.params.amount !== undefined ? effData.params.amount : 0.5
+                                    Layout.fillWidth: true
+                                    onApply: (v) => session.updateClipEffectParam(selection.selectedClipId, effIdx, "amount", v)
+                                }
+                            }
                         }
                     }
                 }
 
                 // ==================== TRANSITION INSPECTOR ====================
                 ColumnLayout {
-                    visible: root.transInfo !== null && root.transInfo.id !== undefined
+                    visible: root.transInfo && root.transInfo.id !== undefined
                     spacing: 10
                     Layout.fillWidth: true
 
@@ -616,7 +1229,7 @@ Rectangle {
                         ComboBox {
                             id: typeCombo
                             Layout.fillWidth: true
-                            model: ["crossfade", "dip_black", "dip_white", "wipe_left", "wipe_right", "wipe_up", "wipe_down"]
+                            model: ["crossfade", "dip_black", "dip_white", "iris_circle", "barn_doors_h", "barn_doors_v", "zoom_in", "zoom_out", "flash_dissolve", "wipe_left", "wipe_right", "wipe_up", "wipe_down"]
                             currentIndex: {
                                 if (!root.transInfo) return 0
                                 var idx = model.indexOf(root.transInfo.type)
@@ -685,6 +1298,68 @@ Rectangle {
     }
 
     function applyColor(b, c, s, temp, tint) {
-        session.setClipColorAdjust(selection.selectedClipId, b, c, s, temp, tint)
+        if (typeof session.setClipColorAdjust === 'function' && selection.selectedClipId !== "") {
+            session.setClipColorAdjust(selection.selectedClipId, b, c, s, temp, tint)
+        }
+    }
+
+    function applyWheels(ly, gy, gny, lm) {
+        if (selection.selectedClipId !== "") {
+            var i = root.info || {}
+            var currLy = (ly !== undefined) ? ly : (i.liftY !== undefined ? i.liftY : 0.0)
+            var currGy = (gy !== undefined) ? gy : (i.gammaY !== undefined ? i.gammaY : 1.0)
+            var currGny = (gny !== undefined) ? gny : (i.gainY !== undefined ? i.gainY : 1.0)
+            var currLm = (lm !== undefined) ? lm : (i.lumaMix !== undefined ? i.lumaMix : 1.0)
+            session.setClipColorWheels(
+                selection.selectedClipId,
+                currLy,
+                currGy,
+                currGny,
+                i.offsetR !== undefined ? i.offsetR : 0.0,
+                i.offsetG !== undefined ? i.offsetG : 0.0,
+                i.offsetB !== undefined ? i.offsetB : 0.0,
+                currLm
+            )
+        }
+    }
+
+    Dialog {
+        id: seqDialog
+        title: "Sequence Settings"
+        modal: true
+        anchors.centerIn: parent
+        width: 320
+        standardButtons: Dialog.Ok | Dialog.Cancel
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text {
+                text: "Resolution & Aspect Ratio"
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                color: Theme.textSecondary
+            }
+            ComboBox {
+                id: resCombo
+                Layout.fillWidth: true
+                model: ["1920×1080 (16:9 Landscape)", "1080×1920 (9:16 Portrait)", "3840×2160 (4K UHD)", "1280×720 (720p HD)", "1080×1080 (1:1 Square)"]
+                currentIndex: {
+                    var w = session ? session.sequenceWidth() : 1920
+                    var h = session ? session.sequenceHeight() : 1080
+                    if (w === 1080 && h === 1920) return 1
+                    if (w === 3840 && h === 2160) return 2
+                    if (w === 1280 && h === 720) return 3
+                    if (w === 1080 && h === 1080) return 4
+                    return 0
+                }
+            }
+        }
+        onAccepted: {
+            if (resCombo.currentIndex === 0) session.setSequenceFormat(1920, 1080)
+            else if (resCombo.currentIndex === 1) session.setSequenceFormat(1080, 1920)
+            else if (resCombo.currentIndex === 2) session.setSequenceFormat(3840, 2160)
+            else if (resCombo.currentIndex === 3) session.setSequenceFormat(1280, 720)
+            else if (resCombo.currentIndex === 4) session.setSequenceFormat(1080, 1080)
+        }
     }
 }

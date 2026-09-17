@@ -17,7 +17,19 @@ extern "C" {
 #include <libavutil/opt.h>
 }
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include <algorithm>
+#include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <sstream>
@@ -28,6 +40,88 @@ namespace editor::export_ffmpeg {
 namespace {
 
 constexpr const char* kFontFile = "C:/Windows/Fonts/arial.ttf";
+
+struct TempExportFile {
+    std::filesystem::path path;
+
+    ~TempExportFile() {
+        if (!path.empty()) {
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+        }
+    }
+
+    core::Result<void> reserve(const std::filesystem::path& finalPath) {
+        using R = core::Result<void>;
+        static std::atomic<unsigned long long> counter{0};
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        for (int attempt = 0; attempt < 128; ++attempt) {
+            auto candidate = finalPath;
+            candidate += ".tmp_export." + std::to_string(stamp) + "." +
+                         std::to_string(counter.fetch_add(1)) + ".mp4";
+#ifdef _WIN32
+            HANDLE file = CreateFileW(candidate.c_str(), GENERIC_WRITE, 0, nullptr,
+                                      CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (file == INVALID_HANDLE_VALUE) {
+                const DWORD error = GetLastError();
+                if (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS) {
+                    continue;
+                }
+                return R::fail("cannot reserve export temp file: " +
+                               std::error_code(static_cast<int>(error), std::system_category()).message());
+            }
+            path = std::move(candidate);
+            if (!CloseHandle(file)) {
+                return R::fail("cannot close reserved export temp file");
+            }
+#else
+            FILE* file = std::fopen(candidate.c_str(), "wbx");
+            if (file == nullptr) {
+                const int error = errno;
+                if (error == EEXIST) {
+                    continue;
+                }
+                return R::fail("cannot reserve export temp file: " +
+                               std::error_code(error, std::generic_category()).message());
+            }
+            path = std::move(candidate);
+            if (std::fclose(file) != 0) {
+                return R::fail("cannot close reserved export temp file");
+            }
+#endif
+            return R::ok();
+        }
+        return R::fail("cannot reserve unique export temp file");
+    }
+
+    core::Result<void> commit(const std::filesystem::path& finalPath, bool allowOverwrite) {
+        using R = core::Result<void>;
+        std::error_code ec;
+#ifdef _WIN32
+        const DWORD flags = allowOverwrite ? MOVEFILE_REPLACE_EXISTING : 0;
+        if (!MoveFileExW(path.c_str(), finalPath.c_str(), flags)) {
+            ec = std::error_code(static_cast<int>(GetLastError()), std::system_category());
+        }
+#else
+        if (allowOverwrite) {
+            std::filesystem::rename(path, finalPath, ec);
+        } else {
+            std::filesystem::create_hard_link(path, finalPath, ec);
+        }
+#endif
+        if (ec) {
+            return R::fail("cannot commit final export file: " + ec.message());
+        }
+#ifdef _WIN32
+        path.clear();
+#else
+        if (allowOverwrite) {
+            path.clear();
+        }
+#endif
+        return R::ok();
+    }
+};
 
 std::string formatDouble(double v) {
     char buf[32];
@@ -197,10 +291,11 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
     if (frameA == nullptr && frameB == nullptr) {
         return;
     }
-    // Fast path: untransformed, opaque single frame without transition or effects (preserves Stage 1 exact bytes)
+    // Fast path: untransformed, opaque single frame without transition, rotation, or effects, matching canvas dimensions (preserves Stage 1 exact bytes)
     if (!layer.inTransition && layer.effects.empty() && layer.transform.scale == 1.0 &&
-        layer.transform.x == 0.0 && layer.transform.y == 0.0 && layer.opacity >= 0.99999 &&
-        frameA != nullptr && frameA->width > 0 && frameA->height > 0) {
+        layer.transform.x == 0.0 && layer.transform.y == 0.0 &&
+        std::abs(layer.transform.rotationDeg) < 0.001 && layer.opacity >= 0.99999 &&
+        frameA != nullptr && frameA->width == canvasW && frameA->height == canvasH) {
         const int copyW = (std::min)(frameA->width, canvasW);
         const int copyH = (std::min)(frameA->height, canvasH);
         const int dstX = (canvasW - copyW) / 2;
@@ -253,6 +348,31 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
     double alpha = std::clamp(layer.opacity, 0.0, 1.0);
     const double bf = std::clamp(layer.blendFactor, 0.0, 1.0);
 
+    // Rotation parameters
+    const bool hasRotation = std::abs(layer.transform.rotationDeg) >= 0.001;
+    const double rad = -layer.transform.rotationDeg * 3.14159265358979323846 / 180.0;
+    const double cosR = std::cos(rad);
+    const double sinR = std::sin(rad);
+    const double cx = fitW * 0.5;
+    const double cy = fitH * 0.5;
+
+    // Detect blend mode
+    effects::BlendMode blendMode = effects::BlendMode::Normal;
+    for (const auto& eff : layer.effects) {
+        if (eff.type == "blend_mode" && eff.enabled) {
+            auto it = eff.strParams.find("mode");
+            if (it != eff.strParams.end()) {
+                blendMode = effects::PixelPipeline::parseBlendMode(it->second);
+            } else {
+                auto itNum = eff.params.find("mode");
+                if (itNum != eff.params.end()) {
+                    int m = static_cast<int>(itNum->second);
+                    if (m >= 0 && m <= 9) blendMode = static_cast<effects::BlendMode>(m);
+                }
+            }
+        }
+    }
+
     for (int y = 0; y < fitH; ++y) {
         int dstY = startY + y;
         if (dstY < 0 || dstY >= canvasH) continue;
@@ -262,18 +382,30 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
             int dstX = startX + x;
             if (dstX < 0 || dstX >= canvasW) continue;
 
+            double sampleX = x;
+            double sampleY = y;
+            if (hasRotation) {
+                double dx = x - cx;
+                double dy = y - cy;
+                sampleX = dx * cosR - dy * sinR + cx;
+                sampleY = dx * sinR + dy * cosR + cy;
+                if (sampleX < 0.0 || sampleX >= fitW || sampleY < 0.0 || sampleY >= fitH) {
+                    continue;
+                }
+            }
+
             uint8_t rA = 0, gA = 0, bA = 0, aA = 0;
             if (dataA && frameA && frameA->width > 0 && frameA->height > 0) {
-                int srcXA = std::clamp(static_cast<int>(static_cast<double>(x) * frameA->width / fitW), 0, frameA->width - 1);
-                int srcYA = std::clamp(static_cast<int>(static_cast<double>(y) * frameA->height / fitH), 0, frameA->height - 1);
+                int srcXA = std::clamp(static_cast<int>(sampleX * frameA->width / fitW), 0, frameA->width - 1);
+                int srcYA = std::clamp(static_cast<int>(sampleY * frameA->height / fitH), 0, frameA->height - 1);
                 const uint8_t* pA = dataA + (srcYA * frameA->width + srcXA) * 4;
                 rA = pA[0]; gA = pA[1]; bA = pA[2]; aA = pA[3];
             }
 
             uint8_t rB = 0, gB = 0, bB = 0, aB = 0;
             if (dataB && frameB && frameB->width > 0 && frameB->height > 0) {
-                int srcXB = std::clamp(static_cast<int>(static_cast<double>(x) * frameB->width / fitW), 0, frameB->width - 1);
-                int srcYB = std::clamp(static_cast<int>(static_cast<double>(y) * frameB->height / fitH), 0, frameB->height - 1);
+                int srcXB = std::clamp(static_cast<int>(sampleX * frameB->width / fitW), 0, frameB->width - 1);
+                int srcYB = std::clamp(static_cast<int>(sampleY * frameB->height / fitH), 0, frameB->height - 1);
                 const uint8_t* pB = dataB + (srcYB * frameB->width + srcXB) * 4;
                 rB = pB[0]; gB = pB[1]; bB = pB[2]; aB = pB[3];
             }
@@ -310,23 +442,105 @@ void compositeVideoLayer(AVFrame* dst, int canvasW, int canvasH, const render::P
                     }
                 } else if (layer.transitionType == "wipe_left") {
                     int splitX = static_cast<int>(fitW * (1.0 - bf));
-                    if (x >= splitX) {
+                    if (sampleX >= splitX) {
                         rPix = rB; gPix = gB; bPix = bB; aPix = aB;
                     }
                 } else if (layer.transitionType == "wipe_right") {
                     int splitX = static_cast<int>(fitW * bf);
-                    if (x < splitX) {
+                    if (sampleX < splitX) {
                         rPix = rB; gPix = gB; bPix = bB; aPix = aB;
                     }
                 } else if (layer.transitionType == "wipe_up") {
                     int splitY = static_cast<int>(fitH * (1.0 - bf));
-                    if (y >= splitY) {
+                    if (sampleY >= splitY) {
                         rPix = rB; gPix = gB; bPix = bB; aPix = aB;
                     }
                 } else if (layer.transitionType == "wipe_down") {
                     int splitY = static_cast<int>(fitH * bf);
-                    if (y < splitY) {
+                    if (sampleY < splitY) {
                         rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "iris_circle") {
+                    double maxR = std::sqrt(cx * cx + cy * cy);
+                    double r = maxR * bf;
+                    double dx = sampleX - cx;
+                    double dy = sampleY - cy;
+                    if (std::sqrt(dx * dx + dy * dy) <= r) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "barn_doors_h") {
+                    double doorW = cx * bf;
+                    if (std::abs(sampleX - cx) <= doorW) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "barn_doors_v") {
+                    double doorH = cy * bf;
+                    if (std::abs(sampleY - cy) <= doorH) {
+                        rPix = rB; gPix = gB; bPix = bB; aPix = aB;
+                    }
+                } else if (layer.transitionType == "zoom_in") {
+                    double sA = 1.0 + 0.4 * bf;
+                    double zxA = (sampleX - cx) / sA + cx;
+                    double zyA = (sampleY - cy) / sA + cy;
+                    uint8_t curRA = 0, curGA = 0, curBA = 0, curAA = 0;
+                    if (zxA >= 0 && zxA < fitW && zyA >= 0 && zyA < fitH && dataA && frameA) {
+                        int sx = std::clamp(static_cast<int>(zxA * frameA->width / fitW), 0, frameA->width - 1);
+                        int sy = std::clamp(static_cast<int>(zyA * frameA->height / fitH), 0, frameA->height - 1);
+                        const uint8_t* p = dataA + (sy * frameA->width + sx) * 4;
+                        curRA = p[0]; curGA = p[1]; curBA = p[2]; curAA = p[3];
+                    }
+                    double sB = 0.8 + 0.2 * bf;
+                    double zxB = (sampleX - cx) / sB + cx;
+                    double zyB = (sampleY - cy) / sB + cy;
+                    uint8_t curRB = 0, curGB = 0, curBB = 0, curAB = 0;
+                    if (zxB >= 0 && zxB < fitW && zyB >= 0 && zyB < fitH && dataB && frameB) {
+                        int sx = std::clamp(static_cast<int>(zxB * frameB->width / fitW), 0, frameB->width - 1);
+                        int sy = std::clamp(static_cast<int>(zyB * frameB->height / fitH), 0, frameB->height - 1);
+                        const uint8_t* p = dataB + (sy * frameB->width + sx) * 4;
+                        curRB = p[0]; curGB = p[1]; curBB = p[2]; curAB = p[3];
+                    }
+                    rPix = curRA * (1.0 - bf) + curRB * bf;
+                    gPix = curGA * (1.0 - bf) + curGB * bf;
+                    bPix = curBA * (1.0 - bf) + curBB * bf;
+                    aPix = curAA * (1.0 - bf) + curAB * bf;
+                } else if (layer.transitionType == "zoom_out") {
+                    double sA = 1.0 - 0.4 * bf;
+                    double zxA = (sampleX - cx) / sA + cx;
+                    double zyA = (sampleY - cy) / sA + cy;
+                    uint8_t curRA = 0, curGA = 0, curBA = 0, curAA = 0;
+                    if (zxA >= 0 && zxA < fitW && zyA >= 0 && zyA < fitH && dataA && frameA) {
+                        int sx = std::clamp(static_cast<int>(zxA * frameA->width / fitW), 0, frameA->width - 1);
+                        int sy = std::clamp(static_cast<int>(zyA * frameA->height / fitH), 0, frameA->height - 1);
+                        const uint8_t* p = dataA + (sy * frameA->width + sx) * 4;
+                        curRA = p[0]; curGA = p[1]; curBA = p[2]; curAA = p[3];
+                    }
+                    double sB = 1.3 - 0.3 * bf;
+                    double zxB = (sampleX - cx) / sB + cx;
+                    double zyB = (sampleY - cy) / sB + cy;
+                    uint8_t curRB = 0, curGB = 0, curBB = 0, curAB = 0;
+                    if (zxB >= 0 && zxB < fitW && zyB >= 0 && zyB < fitH && dataB && frameB) {
+                        int sx = std::clamp(static_cast<int>(zxB * frameB->width / fitW), 0, frameB->width - 1);
+                        int sy = std::clamp(static_cast<int>(zyB * frameB->height / fitH), 0, frameB->height - 1);
+                        const uint8_t* p = dataB + (sy * frameB->width + sx) * 4;
+                        curRB = p[0]; curGB = p[1]; curBB = p[2]; curAB = p[3];
+                    }
+                    rPix = curRA * (1.0 - bf) + curRB * bf;
+                    gPix = curGA * (1.0 - bf) + curGB * bf;
+                    bPix = curBA * (1.0 - bf) + curBB * bf;
+                    aPix = curAA * (1.0 - bf) + curAB * bf;
+                } else if (layer.transitionType == "flash_dissolve") {
+                    if (bf < 0.5) {
+                        double f = 2.0 * bf;
+                        rPix = rA * (1.0 - f) + 255.0 * f;
+                        gPix = gA * (1.0 - f) + 250.0 * f;
+                        bPix = bA * (1.0 - f) + 235.0 * f;
+                        aPix = aA * (1.0 - f) + 255.0 * f;
+                    } else {
+                        double f = 2.0 * (bf - 0.5);
+                        rPix = 255.0 * (1.0 - f) + rB * f;
+                        gPix = 250.0 * (1.0 - f) + gB * f;
+                        bPix = 235.0 * (1.0 - f) + bB * f;
+                        aPix = 255.0 * (1.0 - f) + aB * f;
                     }
                 } else {
                     rPix = rA * (1.0 - bf) + rB * bf;
@@ -372,11 +586,21 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
     if (auto r = project.validate(); r.isErr()) {
         return R::fail("cannot export invalid project: " + r.error());
     }
+    const auto finalPath = std::filesystem::u8path(options.outPath);
+    for (const auto& [aid, a] : project.assets) {
+        std::error_code ec;
+        if (!a.path.empty() && std::filesystem::exists(finalPath) && std::filesystem::equivalent(std::filesystem::u8path(a.path), finalPath, ec)) {
+            return R::fail("output path cannot overwrite source asset: " + a.path);
+        }
+    }
+    if (!options.allowOverwrite && std::filesystem::exists(finalPath)) {
+        return R::fail("output file already exists: " + options.outPath);
+    }
     if (!(seq->fps.num() > 0)) {
         return R::fail("sequence fps must be positive");
     }
-    const int canvasW = static_cast<int>(seq->width);
-    const int canvasH = static_cast<int>(seq->height);
+    const int canvasW = (options.overrideWidth > 0) ? options.overrideWidth : static_cast<int>(seq->width);
+    const int canvasH = (options.overrideHeight > 0) ? options.overrideHeight : static_cast<int>(seq->height);
     if (canvasW <= 0 || canvasH <= 0) {
         return R::fail("sequence canvas must be positive");
     }
@@ -497,28 +721,30 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                               std::to_string(t.dx);
         const std::string y = "(h-text_h)/2" + std::string(t.dy >= 0 ? "+" : "") +
                               std::to_string(t.dy);
-        const std::vector<std::pair<std::string, std::string>> textOpts = {
-            {"fontfile", kFontFile},
+        char enable[128];
+        std::snprintf(enable, sizeof(enable), "between(t,%.4f,%.4f)", t.startSec, t.endSec);
+        std::vector<std::pair<std::string, std::string>> opts = {
             {"textfile", t.file},
+            {"fontfile", kFontFile},
             {"fontsize", std::to_string(t.fontPx)},
             {"fontcolor", "white"},
             {"x", x},
             {"y", y},
-            {"enable",
-             "between(t," + formatDouble(t.startSec) + "," + formatDouble(t.endSec) + ")"},
+            {"enable", enable},
         };
-        AVFilterContext* text =
-            makeFilter(graph, "drawtext", instance, nullptr, &textOpts, filterError);
-        if (text == nullptr) {
+        AVFilterContext* dtCtx =
+            makeFilter(graph, "drawtext", instance, nullptr, &opts, filterError);
+        if (dtCtx == nullptr) {
             return failGraph(filterError);
         }
-        if (avfilter_link(chainTail, 0, text, 0) < 0) {
-            return failGraph("cannot link title filter");
+        if (avfilter_link(chainTail, 0, dtCtx, 0) < 0) {
+            return failGraph("cannot link drawtext filter");
         }
-        chainTail = text;
+        chainTail = dtCtx;
     }
+
     AVFilterContext* formatCtx =
-        makeFilter(graph, "format", "to420", "yuv420p", nullptr, filterError);
+        makeFilter(graph, "format", "pix_fmt", "pix_fmts=yuv420p", nullptr, filterError);
     if (formatCtx == nullptr) {
         return failGraph(filterError);
     }
@@ -532,10 +758,17 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
         return failGraph("cannot configure video filter chain");
     }
 
-    // ---- muxer + encoders
+    // ---- muxer + encoders (atomic export: write to tempExportPath first)
+    TempExportFile tempExport;
+    if (auto r = tempExport.reserve(finalPath); r.isErr()) {
+        return failGraph(r.error());
+    }
+    const auto tempUtf8 = tempExport.path.u8string();
+    const std::string tempExportPath(tempUtf8.begin(), tempUtf8.end());
+
     AVFormatContext* mux = nullptr;
     // FFmpeg 8.x allocator takes the filename too (format guessing fallback).
-    if (avformat_alloc_output_context2(&mux, nullptr, "mp4", options.outPath.c_str()) < 0 ||
+    if (avformat_alloc_output_context2(&mux, nullptr, "mp4", tempExportPath.c_str()) < 0 ||
         mux == nullptr) {
         avfilter_graph_free(&graph);
         cleanupTitles();
@@ -548,8 +781,6 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
         avformat_free_context(mux);
         avfilter_graph_free(&graph);
         cleanupTitles(); // idempotent: safe to run twice
-        std::error_code e2;
-        std::filesystem::remove(options.outPath, e2);
         return R::fail(msg);
     };
 
@@ -606,6 +837,24 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
             audioSpans.push_back(AudioSpan{it->second.seqStart, it->second});
         }
     }
+    // Fallback: if no audio track has clips, check unmuted video tracks for clips with audio
+    if (audioSpans.empty()) {
+        for (const auto& track : seq->tracks) {
+            if (track.kind != core::TrackKind::Video || track.muted) {
+                continue;
+            }
+            for (const auto& clipId : track.clipIds) {
+                const auto it = seq->clips.find(clipId);
+                if (it == seq->clips.end() || !it->second.enabled || it->second.assetId.empty()) {
+                    continue;
+                }
+                const auto ait = project.assets.find(it->second.assetId);
+                if (ait != project.assets.end() && ait->second.hasAudio) {
+                    audioSpans.push_back(AudioSpan{it->second.seqStart, it->second});
+                }
+            }
+        }
+    }
     std::sort(audioSpans.begin(), audioSpans.end(), [](const AudioSpan& a, const AudioSpan& b) {
         return a.seqStart < b.seqStart;
     });
@@ -649,9 +898,9 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
     AVDictionary* muxOpts = nullptr;
     av_dict_set(&muxOpts, "movflags", "+faststart", 0);
     if (!(mux->oformat->flags & AVFMT_NOFILE)) {
-        if (avio_open(&mux->pb, options.outPath.c_str(), AVIO_FLAG_WRITE) < 0) {
+        if (avio_open(&mux->pb, tempExportPath.c_str(), AVIO_FLAG_WRITE) < 0) {
             av_dict_free(&muxOpts);
-            return failMux("cannot open output file: " + options.outPath);
+            return failMux("cannot open output file: " + tempExportPath);
         }
     }
     if (avformat_write_header(mux, &muxOpts) < 0) {
@@ -892,45 +1141,85 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
                 audioFailed = true;
                 break;
             }
+            const double speed = span.clip.speed.num() > 0 ? static_cast<double>(span.clip.speed) : 1.0;
             const int64_t spanStartSample =
                 span.seqStart.toFramesRounded(core::Rational(48000, 1));
-            int64_t need =
+            const int64_t needTimeline =
                 span.clip.seqDuration().toFramesRounded(core::Rational(48000, 1));
-            int64_t sampleOffset = 0;
             const float gain = static_cast<float>(span.clip.opacity);
 
-            while (need > 0) {
-                if (cancel.load()) {
-                    break;
-                }
-                auto chunk =
-                    decoder.nextChunk(static_cast<int>((std::min<int64_t>)(need, 4096)));
-                if (chunk.isErr()) {
-                    if (chunk.error() == "eof") {
+            if (std::abs(speed - 1.0) < 1e-4) {
+                int64_t need = needTimeline;
+                int64_t sampleOffset = 0;
+                while (need > 0) {
+                    if (cancel.load()) {
                         break;
                     }
-                    audioError = "audio decode failed: " + chunk.error();
-                    audioFailed = true;
-                    break;
-                }
-                const size_t got =
-                    chunk.value().pcm.size() / media_ffmpeg::DecodedAudioChunk::kChannels;
-                if (got == 0) {
-                    break;
-                }
-                const size_t use = static_cast<size_t>((std::min<int64_t>)(need, static_cast<int64_t>(got)));
-                const int16_t* pcm = chunk.value().pcm.data();
-                for (size_t s = 0; s < use; ++s) {
-                    int64_t timelineIdx = spanStartSample + sampleOffset + static_cast<int64_t>(s);
-                    if (timelineIdx >= 0 && timelineIdx < totalAudioSamples) {
-                        mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 0] +=
-                            static_cast<float>(pcm[s * 2 + 0]) * gain;
-                        mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 1] +=
-                            static_cast<float>(pcm[s * 2 + 1]) * gain;
+                    auto chunk =
+                        decoder.nextChunk(static_cast<int>((std::min<int64_t>)(need, 4096)));
+                    if (chunk.isErr()) {
+                        if (chunk.error() == "eof") {
+                            break;
+                        }
+                        audioError = "audio decode failed: " + chunk.error();
+                        audioFailed = true;
+                        break;
                     }
+                    const size_t got =
+                        chunk.value().pcm.size() / media_ffmpeg::DecodedAudioChunk::kChannels;
+                    if (got == 0) {
+                        break;
+                    }
+                    const size_t use = static_cast<size_t>((std::min<int64_t>)(need, static_cast<int64_t>(got)));
+                    const int16_t* pcm = chunk.value().pcm.data();
+                    for (size_t s = 0; s < use; ++s) {
+                        int64_t timelineIdx = spanStartSample + sampleOffset + static_cast<int64_t>(s);
+                        if (timelineIdx >= 0 && timelineIdx < totalAudioSamples) {
+                            mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 0] +=
+                                static_cast<float>(pcm[s * 2 + 0]) * gain;
+                            mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 1] +=
+                                static_cast<float>(pcm[s * 2 + 1]) * gain;
+                        }
+                    }
+                    sampleOffset += static_cast<int64_t>(use);
+                    need -= static_cast<int64_t>(use);
                 }
-                sampleOffset += static_cast<int64_t>(use);
-                need -= static_cast<int64_t>(use);
+            } else {
+                std::vector<std::int16_t> sourcePcm;
+                const int64_t needSource =
+                    static_cast<int64_t>(std::ceil(static_cast<double>(needTimeline) * speed)) + 4;
+                while (static_cast<int64_t>(sourcePcm.size() / 2) < needSource) {
+                    if (cancel.load()) {
+                        break;
+                    }
+                    auto chunk = decoder.nextChunk(4096);
+                    if (chunk.isErr() || chunk.value().pcm.empty()) {
+                        break;
+                    }
+                    sourcePcm.insert(sourcePcm.end(), chunk.value().pcm.begin(), chunk.value().pcm.end());
+                }
+                const size_t srcFrames = sourcePcm.size() / 2;
+                for (int64_t s = 0; s < needTimeline; ++s) {
+                    int64_t timelineIdx = spanStartSample + s;
+                    if (timelineIdx < 0 || timelineIdx >= totalAudioSamples) {
+                        continue;
+                    }
+                    const double srcPos = static_cast<double>(s) * speed;
+                    const size_t idx0 = static_cast<size_t>(srcPos);
+                    if (idx0 >= srcFrames) {
+                        break;
+                    }
+                    const size_t idx1 = (idx0 + 1 < srcFrames) ? (idx0 + 1) : idx0;
+                    const double frac = srcPos - static_cast<double>(idx0);
+                    const float ch0 = static_cast<float>(
+                        static_cast<double>(sourcePcm[idx0 * 2 + 0]) * (1.0 - frac) +
+                        static_cast<double>(sourcePcm[idx1 * 2 + 0]) * frac);
+                    const float ch1 = static_cast<float>(
+                        static_cast<double>(sourcePcm[idx0 * 2 + 1]) * (1.0 - frac) +
+                        static_cast<double>(sourcePcm[idx1 * 2 + 1]) * frac);
+                    mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 0] += ch0 * gain;
+                    mixTimeline[static_cast<size_t>(timelineIdx) * 2 + 1] += ch1 * gain;
+                }
             }
         }
 
@@ -986,6 +1275,9 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
         }
     }
 
+    if (cancel.load()) {
+        return failMux("cancelled");
+    }
     if (av_write_trailer(mux) < 0) {
         avfilter_graph_free(&graph);
         auto r = failMux("cannot write mp4 trailer");
@@ -993,11 +1285,24 @@ core::Result<void> Mp4Exporter::run(const core::Project& project,
         return r;
     }
     if (!(mux->oformat->flags & AVFMT_NOFILE)) {
-        avio_closep(&mux->pb);
+        const int closeResult = avio_closep(&mux->pb);
+        if (closeResult < 0) {
+            return failMux("cannot close output file: " + ffmpeg_detail::avErrorString(closeResult));
+        }
     }
     avformat_free_context(mux);
+    mux = nullptr;
     avfilter_graph_free(&graph);
     cleanupTitles();
+
+    // Atomic commit: replace destination only upon complete, successful export
+    if (cancel.load()) {
+        return R::fail("cancelled");
+    }
+    if (auto r = tempExport.commit(finalPath, options.allowOverwrite); r.isErr()) {
+        return r;
+    }
+
     report(1.0);
     return R::ok();
 }

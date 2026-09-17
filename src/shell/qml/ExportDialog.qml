@@ -29,11 +29,49 @@ Dialog {
     }
 
     onOpened: {
-        exporter.setOutputPath(exporter.outputPath)
+        if (exporter.state !== 1) {
+            exporter.reset()
+        }
+        applyResolution(selectedResIndex)
     }
-    onClosed: {
-        if (exporter.state === 1)
-            exporter.cancelExport()
+    // Dismissing the dialog does NOT cancel the active export
+    onClosed: {}
+
+    property int selectedResIndex: 1
+    readonly property var resPresets: [
+        { label: "1080p (Full HD)", h: 1080 },
+        { label: "720p (HD)", h: 720 },
+        { label: "4K (UHD)", h: 2160 }
+    ]
+
+    function applyResolution(index) {
+        if (exporter.state === 1) return;
+        selectedResIndex = index;
+        var targetH = resPresets[index].h;
+        var seqW = 1280, seqH = 720;
+        if (session && typeof session.getSequenceAspectPreset === 'function') {
+            var s = session.getSequenceAspectPreset();
+            if (s === "16:9") { seqW = 16; seqH = 9; }
+            else if (s === "9:16") { seqW = 9; seqH = 16; }
+            else if (s === "1:1") { seqW = 1; seqH = 1; }
+            else if (s === "4:5") { seqW = 4; seqH = 5; }
+            else if (s === "21:9") { seqW = 21; seqH = 9; }
+            else if (s.indexOf("x") !== -1) {
+                var parts = s.split("x");
+                if (parts.length === 2 && parseFloat(parts[1]) > 0) {
+                    seqW = parseFloat(parts[0]);
+                    seqH = parseFloat(parts[1]);
+                }
+            }
+        }
+        var targetW = Math.round(targetH * (seqW / seqH));
+        if (targetW % 2 !== 0) targetW += 1;
+        if (targetH % 2 !== 0) targetH += 1;
+
+        if (exporter) {
+            exporter.exportWidth = targetW;
+            exporter.exportHeight = targetH;
+        }
     }
 
     ColumnLayout {
@@ -46,7 +84,7 @@ Dialog {
             Layout.fillWidth: true
 
             Text {
-                text: "Export"
+                text: "Export Video"
                 font.family: Theme.fontBody
                 font.pixelSize: 15
                 font.bold: true
@@ -83,7 +121,7 @@ Dialog {
             color: Theme.borderSubtle
         }
 
-        // Resolution Presets Pills
+        // Resolution Presets Pills (Interactive)
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 6
@@ -99,23 +137,33 @@ Dialog {
                 spacing: 8
 
                 Repeater {
-                    model: ["1080p (Full HD)", "720p (HD)", "4K (UHD)"]
+                    model: root.resPresets
                     delegate: Rectangle {
-                        implicitWidth: resPillText.implicitWidth + 20
+                        implicitWidth: resPillText.implicitWidth + 24
                         implicitHeight: 28
                         radius: 14
-                        color: index === 0 ? Theme.accent : Theme.bgElevated
-                        border.color: index === 0 ? Theme.accent : Theme.borderMedium
+                        color: root.selectedResIndex === index ? Theme.accent : (pillMa.containsMouse ? Theme.bgHover : Theme.bgElevated)
+                        border.color: root.selectedResIndex === index ? Theme.accent : Theme.borderMedium
                         border.width: 1
+                        opacity: exporter.state === 1 ? 0.5 : 1.0
 
                         Text {
                             id: resPillText
                             anchors.centerIn: parent
-                            text: modelData
+                            text: modelData.label
                             font.family: Theme.fontBody
                             font.pixelSize: 11
-                            font.weight: index === 0 ? Font.DemiBold : Font.Normal
-                            color: index === 0 ? "#000000" : Theme.textPrimary
+                            font.weight: root.selectedResIndex === index ? Font.DemiBold : Font.Normal
+                            color: root.selectedResIndex === index ? "#000000" : Theme.textPrimary
+                        }
+
+                        MouseArea {
+                            id: pillMa
+                            anchors.fill: parent
+                            enabled: exporter.state !== 1
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            hoverEnabled: true
+                            onClicked: root.applyResolution(index)
                         }
                     }
                 }
@@ -158,6 +206,7 @@ Dialog {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 6
+                opacity: exporter.state === 1 ? 0.6 : 1.0
 
                 Rectangle {
                     Layout.fillWidth: true
@@ -175,6 +224,8 @@ Dialog {
                         font.pixelSize: 11
                         color: Theme.textPrimary
                         selectByMouse: true
+                        enabled: exporter.state !== 1
+                        readOnly: exporter.state === 1
                         text: exporter.outputPath
                         onEditingFinished: exporter.setOutputPath(text)
                     }
@@ -184,6 +235,7 @@ Dialog {
                     text: "Browse…"
                     compact: true
                     variant: "secondary"
+                    enabled: exporter.state !== 1
                     onClicked: saveDialog.open()
                 }
             }
@@ -242,29 +294,63 @@ Dialog {
             Layout.fillWidth: true
         }
 
-        // Success Banner
-        Rectangle {
+        // Success Banner & Actions
+        ColumnLayout {
             visible: exporter.state === 2
             Layout.fillWidth: true
-            height: 36
-            radius: 6
-            color: "#16342E"
-            border.color: Theme.accent
-            border.width: 1
+            spacing: 8
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 38
+                radius: 6
+                color: "#16342E"
+                border.color: Theme.accent
+                border.width: 1
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 8
+                    Text { text: "✓"; font.pixelSize: 14; font.bold: true; color: Theme.accent }
+                    Text {
+                        text: "Export completed successfully!"
+                        font.family: Theme.fontBody
+                        font.pixelSize: 12
+                        font.bold: true
+                        color: Theme.accent
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+            }
 
             RowLayout {
-                anchors.fill: parent
-                anchors.margins: 8
-                spacing: 6
-                Text { text: "✓"; font.pixelSize: 12; color: Theme.accent }
-                Text {
-                    text: "Export completed successfully!"
-                    font.family: Theme.fontBody
-                    font.pixelSize: 11
-                    font.bold: true
-                    color: Theme.accent
-                    elide: Text.ElideRight
+                Layout.fillWidth: true
+                spacing: 8
+
+                StudioButton {
+                    text: "Open Video"
+                    iconText: "▶"
+                    variant: "primary"
                     Layout.fillWidth: true
+                    onClicked: {
+                        if (exporter && typeof exporter.openCompletedFile === 'function') {
+                            exporter.openCompletedFile()
+                        }
+                    }
+                }
+
+                StudioButton {
+                    text: "Open Folder"
+                    iconText: "📁"
+                    variant: "secondary"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        if (exporter && typeof exporter.openCompletedFolder === 'function') {
+                            exporter.openCompletedFolder()
+                        }
+                    }
                 }
             }
         }
@@ -277,14 +363,28 @@ Dialog {
             spacing: 8
 
             StudioButton {
-                text: "Cancel"
-                variant: "ghost"
-                onClicked: root.close()
+                visible: exporter.state === 2
+                text: "Export Again"
+                variant: "secondary"
+                onClicked: exporter.reset()
             }
 
-            // CapCut Cyan Export Pill Button
+            // Close dialog without canceling active export
+            StudioButton {
+                text: exporter.state === 1 ? "Run in Background" : (exporter.state === 2 ? "Done" : "Cancel")
+                variant: exporter.state === 2 ? "primary" : "ghost"
+                onClicked: {
+                    if (exporter.state === 2) {
+                        exporter.reset()
+                    }
+                    root.close()
+                }
+            }
+
+            // Export / Cancel Button (only shown when not in Done state)
             Rectangle {
-                implicitWidth: 100
+                visible: exporter.state !== 2
+                implicitWidth: 110
                 implicitHeight: 32
                 radius: 16
                 color: exporter.state === 1 ? "#DC2626" : (expMa.pressed ? Theme.accentPressed : (expMa.containsMouse ? Theme.accentHover : Theme.accent))
@@ -299,7 +399,7 @@ Dialog {
                         color: exporter.state === 1 ? "#FFFFFF" : "#000000"
                     }
                     Text {
-                        text: exporter.state === 1 ? "Cancel" : "Export"
+                        text: exporter.state === 1 ? "Cancel Export" : "Export"
                         font.family: Theme.fontBody
                         font.pixelSize: 12
                         font.bold: true
@@ -313,10 +413,79 @@ Dialog {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: {
-                        if (exporter.state === 1)
+                        if (exporter.state === 1) {
                             exporter.cancelExport()
-                        else
-                            exporter.startExport()
+                        } else {
+                            var val = exporter.validateDestination(exporter.outputPath)
+                            if (val === "EXISTS") {
+                                overwriteConfirmDialog.open()
+                            } else {
+                                exporter.startExport(false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: overwriteConfirmDialog
+        title: ""
+        modal: true
+        standardButtons: Dialog.NoButton
+        width: 380
+        height: 150
+        x: (parent.width - width) / 2
+        y: (parent.height - height) / 2
+
+        background: Rectangle {
+            radius: 8
+            color: Theme.bgSurface
+            border.color: Theme.accent
+            border.width: 1
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 16
+            spacing: 10
+
+            Text {
+                text: "Overwrite Existing File?"
+                font.family: Theme.fontBody
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                color: Theme.textPrimary
+            }
+
+            Text {
+                text: "The destination file already exists. Do you want to overwrite it?"
+                font.family: Theme.fontBody
+                font.pixelSize: 11
+                color: Theme.textSecondary
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+            }
+
+            Item { Layout.fillHeight: true }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 8
+
+                StudioButton {
+                    text: "Cancel"
+                    variant: "ghost"
+                    onClicked: overwriteConfirmDialog.close()
+                }
+
+                StudioButton {
+                    text: "Overwrite"
+                    variant: "danger"
+                    onClicked: {
+                        overwriteConfirmDialog.close()
+                        exporter.startExport(true)
                     }
                 }
             }

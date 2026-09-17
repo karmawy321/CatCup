@@ -5,6 +5,7 @@
 #include "render/Evaluator.hpp"
 
 #include <QPainter>
+#include <QPainterPath>
 #include <algorithm>
 #include <optional>
 
@@ -21,7 +22,17 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
     QImage canvas(w, h, QImage::Format_RGBA8888);
     canvas.fill(Qt::black);
 
-    const render::FramePlan plan = render::Evaluator::evaluateVideoAt(seq, t);
+    // If sampling at or past sequence duration, clamp slightly inside so the last frame is evaluated
+    core::Rational evalTime = t;
+    const core::Rational seqDur = render::Evaluator::sequenceDuration(seq);
+    if (seqDur.num() > 0 && evalTime >= seqDur) {
+        const core::Rational frameDur = seq.fps.num() > 0
+            ? core::Rational(1, 1) / seq.fps
+            : core::Rational(1, 30);
+        evalTime = (seqDur > frameDur) ? seqDur - (frameDur / core::Rational(2, 1)) : core::Rational(0);
+    }
+
+    const render::FramePlan plan = render::Evaluator::evaluateVideoAt(seq, evalTime);
 
     auto getDecodedFrame = [&](const core::Id& assetId, const core::Rational& srcTime)
         -> std::optional<media_ffmpeg::DecodedVideoFrame> {
@@ -36,30 +47,62 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
                 return std::nullopt;
             }
             reader.ready = true;
-            if (reader.decoder.seek(srcTime).isErr()) {
-                return std::nullopt;
-            }
+            reader.decoder.seek(srcTime);
             reader.lastDelivered = core::Rational(-1, 1);
+            reader.cachedFrame.reset();
         }
         const auto ait = project.assets.find(assetId);
         const core::Rational srcFps =
             (ait == project.assets.end()) ? core::Rational(30, 1) : ait->second.fps;
-        if (srcTime < reader.lastDelivered) {
-            reader.decoder.seek(srcTime);
-        }
         const double frameDur =
             srcFps.num() > 0 ? 1.0 / static_cast<double>(srcFps) : 1.0 / 30.0;
-        for (int guard = 0; guard < 600; ++guard) {
+
+        // 1. Fast cache check: if caller asks for the exact same or current frame, reuse it!
+        if (reader.cachedFrame.has_value() && reader.lastDelivered >= core::Rational(0)) {
+            const double diff = std::abs(static_cast<double>(srcTime - reader.lastDelivered));
+            if (diff < frameDur * 0.45) {
+                return *reader.cachedFrame;
+            }
+        }
+
+        // 2. Need seek if scrubbing backwards OR jumping forward by more than 2 frames
+        const bool needSeek = (srcTime < reader.lastDelivered) ||
+                              (reader.lastDelivered >= core::Rational(0) &&
+                               static_cast<double>(srcTime) > static_cast<double>(reader.lastDelivered) + frameDur * 2.0);
+        if (needSeek) {
+            reader.decoder.seek(srcTime);
+            reader.lastDelivered = core::Rational(-1, 1);
+            reader.cachedFrame.reset();
+        }
+
+        for (int guard = 0; guard < 60; ++guard) {
             auto got = reader.decoder.nextFrame();
             if (got.isErr()) {
-                break;
+                // If it failed on first iteration without seeking, try seeking once
+                if (guard == 0 && !needSeek) {
+                    if (reader.decoder.seek(srcTime).isOk()) {
+                        got = reader.decoder.nextFrame();
+                    }
+                }
+                if (got.isErr()) {
+                    if (reader.cachedFrame.has_value()) {
+                        return *reader.cachedFrame;
+                    }
+                    break;
+                }
             }
             const double pts = static_cast<double>(got.value().pts);
             if (pts + frameDur <= static_cast<double>(srcTime) && frameDur > 0) {
+                reader.lastDelivered = got.value().pts;
+                reader.cachedFrame = got.value();
                 continue;
             }
             reader.lastDelivered = got.value().pts;
+            reader.cachedFrame = got.value();
             return got.value();
+        }
+        if (reader.cachedFrame.has_value()) {
+            return *reader.cachedFrame;
         }
         return std::nullopt;
     };
@@ -163,6 +206,70 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
                 int splitY = static_cast<int>(h * bf);
                 bp.setClipRect(0, 0, w, splitY);
                 bp.drawImage(0, 0, imgB);
+            } else if (layer.transitionType == "iris_circle") {
+                bp.drawImage(0, 0, imgA);
+                QPainterPath circlePath;
+                double maxR = std::sqrt((w / 2.0) * (w / 2.0) + (h / 2.0) * (h / 2.0));
+                double r = maxR * bf;
+                circlePath.addEllipse(QPointF(w / 2.0, h / 2.0), r, r);
+                bp.setClipPath(circlePath);
+                bp.drawImage(0, 0, imgB);
+            } else if (layer.transitionType == "barn_doors_h") {
+                bp.drawImage(0, 0, imgA);
+                int splitW = static_cast<int>((w / 2.0) * bf);
+                bp.setClipRect(w / 2 - splitW, 0, splitW * 2, h);
+                bp.drawImage(0, 0, imgB);
+            } else if (layer.transitionType == "barn_doors_v") {
+                bp.drawImage(0, 0, imgA);
+                int splitH = static_cast<int>((h / 2.0) * bf);
+                bp.setClipRect(0, h / 2 - splitH, w, splitH * 2);
+                bp.drawImage(0, 0, imgB);
+            } else if (layer.transitionType == "zoom_in") {
+                double scaleA = 1.0 + 0.4 * bf;
+                bp.save();
+                bp.translate(w / 2.0, h / 2.0);
+                bp.scale(scaleA, scaleA);
+                bp.setOpacity(1.0 - bf);
+                bp.drawImage(-w / 2, -h / 2, imgA);
+                bp.restore();
+
+                double scaleB = 0.8 + 0.2 * bf;
+                bp.save();
+                bp.translate(w / 2.0, h / 2.0);
+                bp.scale(scaleB, scaleB);
+                bp.setOpacity(bf);
+                bp.drawImage(-w / 2, -h / 2, imgB);
+                bp.restore();
+            } else if (layer.transitionType == "zoom_out") {
+                double scaleA = 1.0 - 0.4 * bf;
+                bp.save();
+                bp.translate(w / 2.0, h / 2.0);
+                bp.scale(scaleA, scaleA);
+                bp.setOpacity(1.0 - bf);
+                bp.drawImage(-w / 2, -h / 2, imgA);
+                bp.restore();
+
+                double scaleB = 1.3 - 0.3 * bf;
+                bp.save();
+                bp.translate(w / 2.0, h / 2.0);
+                bp.scale(scaleB, scaleB);
+                bp.setOpacity(bf);
+                bp.drawImage(-w / 2, -h / 2, imgB);
+                bp.restore();
+            } else if (layer.transitionType == "flash_dissolve") {
+                if (bf < 0.5) {
+                    double f = 2.0 * bf;
+                    bp.setOpacity(1.0 - f);
+                    bp.drawImage(0, 0, imgA);
+                    bp.setOpacity(f);
+                    bp.fillRect(0, 0, w, h, QColor(255, 250, 235));
+                } else {
+                    double f = 2.0 * (bf - 0.5);
+                    bp.setOpacity(1.0 - f);
+                    bp.fillRect(0, 0, w, h, QColor(255, 250, 235));
+                    bp.setOpacity(f);
+                    bp.drawImage(0, 0, imgB);
+                }
             } else {
                 bp.setOpacity(1.0 - bf);
                 bp.drawImage(0, 0, imgA);
@@ -194,6 +301,31 @@ QImage FrameCompositor::frameAt(const core::Project& project, const core::Sequen
 
                 painter.save();
                 painter.setOpacity(std::clamp(layer.opacity, 0.0, 1.0));
+
+                effects::BlendMode blendMode = effects::BlendMode::Normal;
+                for (const auto& eff : layer.effects) {
+                    if (eff.type == "blend_mode" && eff.enabled) {
+                        auto it = eff.strParams.find("mode");
+                        if (it != eff.strParams.end()) {
+                            blendMode = effects::PixelPipeline::parseBlendMode(it->second);
+                        } else {
+                            auto itNum = eff.params.find("mode");
+                            if (itNum != eff.params.end()) {
+                                int m = static_cast<int>(itNum->second);
+                                if (m >= 0 && m <= 9) blendMode = static_cast<effects::BlendMode>(m);
+                            }
+                        }
+                    }
+                }
+                if (blendMode == effects::BlendMode::Screen) painter.setCompositionMode(QPainter::CompositionMode_Screen);
+                else if (blendMode == effects::BlendMode::Multiply) painter.setCompositionMode(QPainter::CompositionMode_Multiply);
+                else if (blendMode == effects::BlendMode::Overlay) painter.setCompositionMode(QPainter::CompositionMode_Overlay);
+                else if (blendMode == effects::BlendMode::Darken) painter.setCompositionMode(QPainter::CompositionMode_Darken);
+                else if (blendMode == effects::BlendMode::Lighten) painter.setCompositionMode(QPainter::CompositionMode_Lighten);
+                else if (blendMode == effects::BlendMode::ColorBurn) painter.setCompositionMode(QPainter::CompositionMode_ColorBurn);
+                else if (blendMode == effects::BlendMode::ColorDodge) painter.setCompositionMode(QPainter::CompositionMode_ColorDodge);
+                else if (blendMode == effects::BlendMode::SoftLight) painter.setCompositionMode(QPainter::CompositionMode_SoftLight);
+
                 painter.translate(w / 2.0 + layer.transform.x, h / 2.0 + layer.transform.y);
                 painter.scale(layer.transform.scale, layer.transform.scale);
                 painter.rotate(layer.transform.rotationDeg);
